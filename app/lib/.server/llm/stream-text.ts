@@ -41,6 +41,10 @@ export async function streamText(props: {
     contextFiles,
     summary,
   } = props;
+
+  // Safeguard against undefined or null serverEnv
+  const safeServerEnv = serverEnv || ({} as Env);
+
   let currentModel = DEFAULT_MODEL;
   let currentProvider = DEFAULT_PROVIDER.name;
   let processedMessages = messages.map((message) => {
@@ -66,27 +70,46 @@ export async function streamText(props: {
   let modelDetails = staticModels.find((m) => m.name === currentModel);
 
   if (!modelDetails) {
-    const modelsList = [
-      ...(provider.staticModels || []),
-      ...(await LLMManager.getInstance().getModelListFromProvider(provider, {
-        apiKeys,
-        providerSettings,
-        serverEnv: serverEnv as any,
-      })),
-    ];
+    // Try to get dynamic models if static model not found
+    try {
+      const modelsList = [
+        ...(provider.staticModels || []),
+        ...(await LLMManager.getInstance().getModelListFromProvider(provider, {
+          apiKeys,
+          providerSettings,
+          serverEnv: safeServerEnv as any,
+        })),
+      ];
 
-    if (!modelsList.length) {
-      throw new Error(`No models found for provider ${provider.name}`);
-    }
+      if (!modelsList.length) {
+        logger.warn(`No models found for provider ${provider.name}`);
 
-    modelDetails = modelsList.find((m) => m.name === currentModel);
+        // Fallback to default provider and model
+        modelDetails = staticModels[0] || {
+          name: DEFAULT_MODEL,
+          provider: DEFAULT_PROVIDER.name,
+          maxTokenAllowed: MAX_TOKENS,
+        };
+      } else {
+        modelDetails = modelsList.find((m) => m.name === currentModel);
 
-    if (!modelDetails) {
-      // Fallback to first model
-      logger.warn(
-        `MODEL [${currentModel}] not found in provider [${provider.name}]. Falling back to first model. ${modelsList[0].name}`,
-      );
-      modelDetails = modelsList[0];
+        if (!modelDetails) {
+          // Fallback to first model
+          logger.warn(
+            `MODEL [${currentModel}] not found in provider [${provider.name}]. Falling back to first model. ${modelsList[0].name}`,
+          );
+          modelDetails = modelsList[0];
+        }
+      }
+    } catch (error) {
+      logger.error(`Error getting models for provider ${provider.name}:`, error);
+
+      // Fallback to the first available static model
+      modelDetails = staticModels[0] || {
+        name: DEFAULT_MODEL,
+        provider: DEFAULT_PROVIDER.name,
+        maxTokenAllowed: MAX_TOKENS,
+      };
     }
   }
 
@@ -139,18 +162,35 @@ ${props.summary}
 
   logger.info(`Sending llm call to ${provider.name} with model ${modelDetails.name}`);
 
-  // console.log(systemPrompt,processedMessages);
+  try {
+    return await _streamText({
+      model: provider.getModelInstance({
+        model: modelDetails.name,
+        serverEnv: safeServerEnv,
+        apiKeys,
+        providerSettings,
+      }),
+      system: systemPrompt,
+      maxTokens: dynamicMaxTokens,
+      messages: convertToCoreMessages(processedMessages as any),
+      ...options,
+    });
+  } catch (error) {
+    logger.error(`Error in _streamText with provider ${provider.name}, model ${modelDetails.name}:`, error);
 
-  return await _streamText({
-    model: provider.getModelInstance({
-      model: modelDetails.name,
-      serverEnv,
-      apiKeys,
-      providerSettings,
-    }),
-    system: systemPrompt,
-    maxTokens: dynamicMaxTokens,
-    messages: convertToCoreMessages(processedMessages as any),
-    ...options,
-  });
+    // Try to provide more context about the error
+    if (error instanceof Error) {
+      if (error.message.includes('API key')) {
+        logger.error('API key error detected. Check if API keys are properly configured.');
+        throw new Error(`API key error with provider ${provider.name}: ${error.message}`);
+      }
+
+      if (error.message.includes('network') || error.message.includes('fetch')) {
+        logger.error('Network error detected when calling LLM API.');
+        throw new Error(`Network error with provider ${provider.name}: ${error.message}`);
+      }
+    }
+
+    throw error;
+  }
 }

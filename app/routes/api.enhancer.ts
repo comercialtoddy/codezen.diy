@@ -6,132 +6,183 @@ import { getApiKeysFromCookie, getProviderSettingsFromCookie } from '~/lib/api/c
 import { createScopedLogger } from '~/utils/logger';
 
 export async function action(args: ActionFunctionArgs) {
-  return enhancerAction(args);
+  try {
+    return await enhancerAction(args);
+  } catch (error) {
+    console.error('Error in enhancer action:', error);
+
+    if (error instanceof Response) {
+      return error;
+    }
+
+    return new Response(JSON.stringify({ error: 'Internal Server Error', message: error?.toString() }), {
+      status: 500,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+  }
 }
 
 const logger = createScopedLogger('api.enhancher');
 
 async function enhancerAction({ context, request }: ActionFunctionArgs) {
-  const { message, model, provider } = await request.json<{
-    message: string;
-    model: string;
-    provider: ProviderInfo;
-    apiKeys?: Record<string, string>;
-  }>();
-
-  const { name: providerName } = provider;
-
-  // validate 'model' and 'provider' fields
-  if (!model || typeof model !== 'string') {
-    throw new Response('Invalid or missing model', {
-      status: 400,
-      statusText: 'Bad Request',
-    });
-  }
-
-  if (!providerName || typeof providerName !== 'string') {
-    throw new Response('Invalid or missing provider', {
-      status: 400,
-      statusText: 'Bad Request',
-    });
-  }
-
-  const cookieHeader = request.headers.get('Cookie');
-  const apiKeys = getApiKeysFromCookie(cookieHeader);
-  const providerSettings = getProviderSettingsFromCookie(cookieHeader);
-
   try {
-    const result = await streamText({
-      messages: [
-        {
-          role: 'user',
-          content:
-            `[Model: ${model}]\n\n[Provider: ${providerName}]\n\n` +
-            stripIndents`
-            You are a professional prompt engineer specializing in crafting precise, effective prompts.
-            Your task is to enhance prompts by making them more specific, actionable, and effective.
+    const {
+      message,
+      model,
+      provider,
+      apiKeys: requestApiKeys,
+    } = await request.json<{
+      message: string;
+      model: string;
+      provider: ProviderInfo;
+      apiKeys?: Record<string, string>;
+    }>();
 
-            I want you to improve the user prompt that is wrapped in \`<original_prompt>\` tags.
+    const { name: providerName } = provider;
 
-            For valid prompts:
-            - Make instructions explicit and unambiguous
-            - Add relevant context and constraints
-            - Remove redundant information
-            - Maintain the core intent
-            - Ensure the prompt is self-contained
-            - Use professional language
-
-            For invalid or unclear prompts:
-            - Respond with clear, professional guidance
-            - Keep responses concise and actionable
-            - Maintain a helpful, constructive tone
-            - Focus on what the user should provide
-            - Use a standard template for consistency
-
-            IMPORTANT: Your response must ONLY contain the enhanced prompt text.
-            Do not include any explanations, metadata, or wrapper tags.
-
-            <original_prompt>
-              ${message}
-            </original_prompt>
-          `,
-        },
-      ],
-      env: context.cloudflare?.env as any,
-      apiKeys,
-      providerSettings,
-      options: {
-        system:
-          'You are a senior software principal architect, you should help the user analyse the user query and enrich it with the necessary context and constraints to make it more specific, actionable, and effective. You should also ensure that the prompt is self-contained and uses professional language. Your response should ONLY contain the enhanced prompt text. Do not include any explanations, metadata, or wrapper tags.',
-
-        /*
-         * onError: (event) => {
-         *   throw new Response(null, {
-         *     status: 500,
-         *     statusText: 'Internal Server Error',
-         *   });
-         * }
-         */
-      },
-    });
-
-    // Handle streaming errors in a non-blocking way
-    (async () => {
-      try {
-        for await (const part of result.fullStream) {
-          if (part.type === 'error') {
-            const error: any = part.error;
-            logger.error('Streaming error:', error);
-            break;
-          }
-        }
-      } catch (error) {
-        logger.error('Error processing stream:', error);
-      }
-    })();
-
-    // Return the text stream directly since it's already text data
-    return new Response(result.textStream, {
-      status: 200,
-      headers: {
-        'Content-Type': 'text/event-stream',
-        Connection: 'keep-alive',
-        'Cache-Control': 'no-cache',
-      },
-    });
-  } catch (error: unknown) {
-    console.log(error);
-
-    if (error instanceof Error && error.message?.includes('API key')) {
-      throw new Response('Invalid or missing API key', {
-        status: 401,
-        statusText: 'Unauthorized',
+    // validate 'model' and 'provider' fields
+    if (!model || typeof model !== 'string') {
+      throw new Response('Invalid or missing model', {
+        status: 400,
+        statusText: 'Bad Request',
       });
     }
 
-    throw new Response(null, {
-      status: 500,
-      statusText: 'Internal Server Error',
+    if (!providerName || typeof providerName !== 'string') {
+      throw new Response('Invalid or missing provider', {
+        status: 400,
+        statusText: 'Bad Request',
+      });
+    }
+
+    const cookieHeader = request.headers.get('Cookie');
+    const apiKeys = requestApiKeys || getApiKeysFromCookie(cookieHeader);
+    const providerSettings = getProviderSettingsFromCookie(cookieHeader);
+
+    // Ensure environment is properly accessed
+    const env = context?.cloudflare?.env || {};
+
+    if (!env && !apiKeys[providerName]) {
+      logger.warn(`No environment variables found and no API key for provider ${providerName}`);
+    }
+
+    try {
+      const result = await streamText({
+        messages: [
+          {
+            role: 'user',
+            content:
+              `[Model: ${model}]\n\n[Provider: ${providerName}]\n\n` +
+              stripIndents`
+              You are a professional prompt engineer specializing in crafting precise, effective prompts.
+              Your task is to enhance prompts by making them more specific, actionable, and effective.
+
+              I want you to improve the user prompt that is wrapped in \`<original_prompt>\` tags.
+
+              For valid prompts:
+              - Make instructions explicit and unambiguous
+              - Add relevant context and constraints
+              - Remove redundant information
+              - Maintain the core intent
+              - Ensure the prompt is self-contained
+              - Use professional language
+
+              For invalid or unclear prompts:
+              - Respond with clear, professional guidance
+              - Keep responses concise and actionable
+              - Maintain a helpful, constructive tone
+              - Focus on what the user should provide
+              - Use a standard template for consistency
+
+              IMPORTANT: Your response must ONLY contain the enhanced prompt text.
+              Do not include any explanations, metadata, or wrapper tags.
+
+              <original_prompt>
+                ${message}
+              </original_prompt>
+            `,
+          },
+        ],
+        env: env as any,
+        apiKeys,
+        providerSettings,
+        options: {
+          system:
+            'You are a senior software principal architect, you should help the user analyse the user query and enrich it with the necessary context and constraints to make it more specific, actionable, and effective. You should also ensure that the prompt is self-contained and uses professional language. Your response should ONLY contain the enhanced prompt text. Do not include any explanations, metadata, or wrapper tags.',
+
+          /*
+           * onError: (event) => {
+           *   throw new Response(null, {
+           *     status: 500,
+           *     statusText: 'Internal Server Error',
+           *   });
+           * }
+           */
+        },
+      });
+
+      // Handle streaming errors in a non-blocking way
+      (async () => {
+        try {
+          for await (const part of result.fullStream) {
+            if (part.type === 'error') {
+              const error: any = part.error;
+              logger.error('Streaming error:', error);
+              break;
+            }
+          }
+        } catch (error) {
+          logger.error('Error processing stream:', error);
+        }
+      })();
+
+      // Return the text stream directly since it's already text data
+      return new Response(result.textStream, {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/event-stream',
+          Connection: 'keep-alive',
+          'Cache-Control': 'no-cache',
+        },
+      });
+    } catch (error: unknown) {
+      logger.error('Error in streamText:', error);
+
+      if (error instanceof Error && error.message?.includes('API key')) {
+        throw new Response('Invalid or missing API key', {
+          status: 401,
+          statusText: 'Unauthorized',
+        });
+      }
+
+      throw new Response(
+        JSON.stringify({
+          error: 'Internal Server Error',
+          message: error instanceof Error ? error.message : String(error),
+          stack: process.env.NODE_ENV !== 'production' && error instanceof Error ? error.stack : undefined,
+        }),
+        {
+          status: 500,
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        },
+      );
+    }
+  } catch (error) {
+    logger.error('Error parsing request:', error);
+
+    if (error instanceof Response) {
+      return error;
+    }
+
+    return new Response(JSON.stringify({ error: 'Error processing request', message: String(error) }), {
+      status: 400,
+      headers: {
+        'Content-Type': 'application/json',
+      },
     });
   }
 }
