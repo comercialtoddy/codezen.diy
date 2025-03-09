@@ -1,7 +1,7 @@
 import { type ActionFunctionArgs, type LoaderFunctionArgs } from '@remix-run/cloudflare';
 import { createScopedLogger } from '~/utils/logger';
-import { getApiKeysFromCookie, getProviderSettingsFromCookie } from '~/lib/api/cookies';
-import { DEFAULT_MODEL, DEFAULT_PROVIDER, PROVIDER_LIST } from '~/utils/constants';
+import { getApiKeysFromCookie } from '~/lib/api/cookies';
+import { DEFAULT_MODEL, DEFAULT_PROVIDER } from '~/utils/constants';
 import { LLMManager } from '~/lib/modules/llm/manager';
 
 const logger = createScopedLogger('api.check-enhancer');
@@ -21,7 +21,6 @@ export async function loader({ context, request }: LoaderFunctionArgs) {
     const cloudflareEnv = context?.cloudflare?.env || {};
     const cookieHeader = request.headers.get('Cookie');
     const apiKeys = getApiKeysFromCookie(cookieHeader);
-    const providerSettings = getProviderSettingsFromCookie(cookieHeader);
 
     // Obter informações sobre os provedores disponíveis
     const llmManager = LLMManager.getInstance(cloudflareEnv as any);
