@@ -1,10 +1,13 @@
 import { memo, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useStore } from '@nanostores/react';
 import type { FileMap } from '~/lib/stores/files';
 import { classNames } from '~/utils/classNames';
 import { createScopedLogger, renderLogger } from '~/utils/logger';
 import * as ContextMenu from '@radix-ui/react-context-menu';
 import type { FileHistory } from '~/types/actions';
 import { diffLines, type Change } from 'diff';
+import { diagnosticsStore } from '~/lib/stores/diagnostics';
+import type { DiagnosticItem } from '~/components/workbench/diagnostics/DiagnosticsPanel';
 
 const logger = createScopedLogger('FileTree');
 
@@ -233,22 +236,61 @@ function FileContextMenu({ onCopyPath, onCopyRelativePath, children }: FolderCon
 }
 
 function Folder({ folder, collapsed, selected = false, onCopyPath, onCopyRelativePath, onClick }: FolderProps) {
+  const allDiagnostics = useStore(diagnosticsStore.diagnostics);
+
+  // Verificar se algum arquivo dentro desta pasta tem erros
+  const hasErrors = useMemo(() => {
+    const filesWithDiagnostics = Object.keys(allDiagnostics);
+    return filesWithDiagnostics.some((filePath) => {
+      const diagnostics = allDiagnostics[filePath] || [];
+      return filePath.startsWith(folder.fullPath) && diagnostics.some((d) => d.severity === 'error');
+    });
+  }, [folder.fullPath, allDiagnostics]);
+
+  // Verificar se algum arquivo dentro desta pasta tem avisos
+  const hasWarnings = useMemo(() => {
+    const filesWithDiagnostics = Object.keys(allDiagnostics);
+    return (
+      !hasErrors &&
+      filesWithDiagnostics.some((filePath) => {
+        const diagnostics = allDiagnostics[filePath] || [];
+        return filePath.startsWith(folder.fullPath) && diagnostics.some((d) => d.severity === 'warning');
+      })
+    );
+  }, [folder.fullPath, allDiagnostics, hasErrors]);
+
   return (
     <FileContextMenu onCopyPath={onCopyPath} onCopyRelativePath={onCopyRelativePath}>
       <NodeButton
         className={classNames('group', {
-          'bg-transparent text-bolt-elements-item-contentDefault hover:text-bolt-elements-item-contentActive hover:bg-bolt-elements-item-backgroundActive':
+          'bg-transparent hover:bg-bolt-elements-item-backgroundActive text-bolt-elements-item-contentDefault':
             !selected,
           'bg-bolt-elements-item-backgroundAccent text-bolt-elements-item-contentAccent': selected,
         })}
         depth={folder.depth}
-        iconClasses={classNames({
-          'i-ph:caret-right scale-98': collapsed,
-          'i-ph:caret-down scale-98': !collapsed,
+        iconClasses={classNames('i-ph:folder-duotone scale-98', {
+          'group-hover:text-bolt-elements-item-contentActive': !selected,
+          'text-bolt-elements-icon-error': hasErrors,
+          'text-amber-500': hasWarnings,
         })}
         onClick={onClick}
       >
-        {folder.name}
+        <div
+          className={classNames('flex items-center', {
+            'group-hover:text-bolt-elements-item-contentActive': !selected,
+          })}
+        >
+          <div className="flex-1 truncate pr-2">{folder.name}</div>
+          <div className="flex items-center gap-1">
+            {hasErrors && <div className="i-ph:warning-circle-fill text-bolt-elements-icon-error text-xs" />}
+            {hasWarnings && <div className="i-ph:warning-fill text-amber-500 text-xs" />}
+            <div
+              className={classNames('i-ph:caret-right text-lg transition-transform', {
+                'rotate-90': !collapsed,
+              })}
+            />
+          </div>
+        </div>
       </NodeButton>
     </FileContextMenu>
   );
@@ -273,9 +315,16 @@ function File({
   unsavedChanges = false,
   fileHistory = {},
 }: FileProps) {
-  const fileModifications = fileHistory[fullPath];
+  const allDiagnostics = useStore(diagnosticsStore.diagnostics);
+  const fileDiagnostics = allDiagnostics[fullPath] || [];
 
-  // const hasModifications = fileModifications !== undefined;
+  const errorCount = fileDiagnostics.filter((d: DiagnosticItem) => d.severity === 'error').length;
+  const warningCount = fileDiagnostics.filter((d: DiagnosticItem) => d.severity === 'warning').length;
+
+  const fileHasErrors = errorCount > 0;
+  const fileHasWarnings = warningCount > 0;
+
+  const fileModifications = fileHistory[fullPath];
 
   // Calculate added and removed lines from the most recent changes
   const { additions, deletions } = useMemo(() => {
@@ -316,37 +365,78 @@ function File({
 
   const showStats = additions > 0 || deletions > 0;
 
+  // Determinar a classe de borda baseada nos diagnósticos
+  const borderClass = useMemo(() => {
+    if (fileHasErrors) {
+      return 'border-l-2 border-bolt-elements-icon-error animate-pulse-gentle';
+    } else if (fileHasWarnings) {
+      return 'border-l-2 border-amber-500';
+    }
+
+    return '';
+  }, [fileHasErrors, fileHasWarnings]);
+
+  // Determinar a classe de animação para os ícones
+  const iconAnimationClass = useMemo(() => {
+    if (fileHasErrors) {
+      return 'animate-scale-bounce';
+    }
+
+    return '';
+  }, [fileHasErrors]);
+
   return (
     <FileContextMenu onCopyPath={onCopyPath} onCopyRelativePath={onCopyRelativePath}>
-      <NodeButton
-        className={classNames('group', {
-          'bg-transparent hover:bg-bolt-elements-item-backgroundActive text-bolt-elements-item-contentDefault':
-            !selected,
-          'bg-bolt-elements-item-backgroundAccent text-bolt-elements-item-contentAccent': selected,
-        })}
-        depth={depth}
-        iconClasses={classNames('i-ph:file-duotone scale-98', {
-          'group-hover:text-bolt-elements-item-contentActive': !selected,
-        })}
-        onClick={onClick}
-      >
-        <div
-          className={classNames('flex items-center', {
-            'group-hover:text-bolt-elements-item-contentActive': !selected,
+      <div className={classNames('rounded-sm transition-all duration-200', borderClass)}>
+        <NodeButton
+          className={classNames('group relative', {
+            'bg-transparent hover:bg-bolt-elements-item-backgroundActive text-bolt-elements-item-contentDefault':
+              !selected,
+            'bg-bolt-elements-item-backgroundAccent text-bolt-elements-item-contentAccent': selected,
           })}
+          depth={depth}
+          iconClasses={classNames('i-ph:file-duotone scale-98', {
+            'group-hover:text-bolt-elements-item-contentActive': !selected,
+            'text-bolt-elements-icon-error': fileHasErrors,
+            'text-amber-500': !fileHasErrors && fileHasWarnings,
+          })}
+          onClick={onClick}
         >
-          <div className="flex-1 truncate pr-2">{name}</div>
-          <div className="flex items-center gap-1">
-            {showStats && (
-              <div className="flex items-center gap-1 text-xs">
-                {additions > 0 && <span className="text-green-500">+{additions}</span>}
-                {deletions > 0 && <span className="text-red-500">-{deletions}</span>}
-              </div>
-            )}
-            {unsavedChanges && <span className="i-ph:circle-fill scale-68 shrink-0 text-orange-500" />}
+          <div
+            className={classNames('flex items-center', {
+              'group-hover:text-bolt-elements-item-contentActive': !selected,
+            })}
+          >
+            <div className="flex-1 truncate pr-2">{name}</div>
+            <div className="flex items-center gap-1">
+              {fileHasErrors && (
+                <div
+                  className={classNames(
+                    'flex items-center gap-0.5 px-1.5 py-0.5 text-xs bg-red-500/10 text-bolt-elements-icon-error rounded-full',
+                    iconAnimationClass,
+                  )}
+                >
+                  <div className="i-ph:x-circle-fill text-xs" />
+                  <span>{errorCount}</span>
+                </div>
+              )}
+              {!fileHasErrors && fileHasWarnings && (
+                <div className="flex items-center gap-0.5 px-1.5 py-0.5 text-xs bg-amber-500/10 text-amber-500 rounded-full">
+                  <div className="i-ph:warning-fill text-xs" />
+                  <span>{warningCount}</span>
+                </div>
+              )}
+              {showStats && (
+                <div className="flex items-center gap-1 text-xs">
+                  {additions > 0 && <span className="text-green-500">+{additions}</span>}
+                  {deletions > 0 && <span className="text-red-500">-{deletions}</span>}
+                </div>
+              )}
+              {unsavedChanges && <span className="i-ph:circle-fill scale-68 shrink-0 text-orange-500" />}
+            </div>
           </div>
-        </div>
-      </NodeButton>
+        </NodeButton>
+      </div>
     </FileContextMenu>
   );
 }

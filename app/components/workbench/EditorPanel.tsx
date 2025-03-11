@@ -1,5 +1,5 @@
 import { useStore } from '@nanostores/react';
-import { memo, useMemo } from 'react';
+import { memo, useEffect, useMemo } from 'react';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import {
   CodeMirrorEditor,
@@ -21,6 +21,8 @@ import { FileBreadcrumb } from './FileBreadcrumb';
 import { FileTree } from './FileTree';
 import { DEFAULT_TERMINAL_SIZE, TerminalTabs } from './terminal/TerminalTabs';
 import { workbenchStore } from '~/lib/stores/workbench';
+import { diagnosticsStore } from '~/lib/stores/diagnostics';
+import type { DiagnosticItem } from './diagnostics/DiagnosticsPanel';
 
 interface EditorPanelProps {
   files?: FileMap;
@@ -58,6 +60,7 @@ export const EditorPanel = memo(
 
     const theme = useStore(themeStore);
     const showTerminal = useStore(workbenchStore.showTerminal);
+    const allDiagnostics = useStore(diagnosticsStore.diagnostics);
 
     const activeFileSegments = useMemo(() => {
       if (!editorDocument) {
@@ -70,6 +73,82 @@ export const EditorPanel = memo(
     const activeFileUnsaved = useMemo(() => {
       return editorDocument !== undefined && unsavedFiles?.has(editorDocument.filePath);
     }, [editorDocument, unsavedFiles]);
+
+    const activeFileDiagnostics = useMemo(() => {
+      if (!editorDocument) {
+        return [];
+      }
+
+      return allDiagnostics[editorDocument.filePath] || [];
+    }, [editorDocument, allDiagnostics]);
+
+    /*
+     * Exemplo de como poderia detectar erros de sintaxe
+     * Na prática, isso seria integrado a um linter real como ESLint
+     */
+    useEffect(() => {
+      if (!editorDocument || isStreaming) {
+        return;
+      }
+
+      // Simulação de detecção de erro de sintaxe em TypeScript/JavaScript
+      const detectJSErrors = (content: string, filePath: string) => {
+        // Procurar por possíveis erros comuns de sintaxe
+        const lines = content.split('\n');
+        const diagnostics: DiagnosticItem[] = [];
+
+        lines.forEach((line, index) => {
+          // Exemplo: verificar parênteses não fechados
+          const openParens = (line.match(/\(/g) || []).length;
+          const closeParens = (line.match(/\)/g) || []).length;
+
+          if (openParens !== closeParens) {
+            diagnostics.push({
+              id: `syntax-error-${filePath}-${index}`,
+              filePath,
+              line: index + 1,
+              column: line.indexOf('(') + 1 || 1,
+              message: 'Parênteses não estão balanceados nesta linha',
+              severity: 'error',
+              source: 'syntax-checker',
+            });
+          }
+
+          // Exemplo: verificar ponto-e-vírgula faltando em JS/TS
+          if (/^.*\b(const|let|var).*=.*[^;,){]$/.test(line)) {
+            diagnostics.push({
+              id: `syntax-error-${filePath}-${index}-semicolon`,
+              filePath,
+              line: index + 1,
+              column: line.length,
+              message: 'Ponto-e-vírgula (;) faltando',
+              severity: 'warning',
+              source: 'syntax-checker',
+            });
+          }
+        });
+
+        return diagnostics;
+      };
+
+      // Apenas para fins de demo, detecte erros apenas em arquivos JS/TS
+      if (editorDocument.filePath.match(/\.(js|jsx|ts|tsx)$/)) {
+        const diagnostics = detectJSErrors(editorDocument.value, editorDocument.filePath);
+
+        // Limpar diagnósticos anteriores
+        diagnosticsStore.clearDiagnostics(editorDocument.filePath);
+
+        // Adicionar novos diagnósticos
+        diagnostics.forEach((diagnostic) => {
+          diagnosticsStore.addDiagnostic(diagnostic);
+        });
+      }
+    }, [editorDocument, isStreaming]);
+
+    const handleToggleDiagnostics = () => {
+      diagnosticsStore.toggleDiagnosticsPanel();
+      workbenchStore.toggleTerminal(true);
+    };
 
     return (
       <PanelGroup direction="vertical">
@@ -99,18 +178,36 @@ export const EditorPanel = memo(
                 {activeFileSegments?.length && (
                   <div className="flex items-center flex-1 text-sm">
                     <FileBreadcrumb pathSegments={activeFileSegments} files={files} onFileSelect={onFileSelect} />
-                    {activeFileUnsaved && (
-                      <div className="flex gap-1 ml-auto -mr-1.5">
-                        <PanelHeaderButton onClick={onFileSave}>
-                          <div className="i-ph:floppy-disk-duotone" />
-                          Save
+                    <div className="flex gap-1 ml-auto">
+                      {activeFileDiagnostics.length > 0 && (
+                        <PanelHeaderButton onClick={handleToggleDiagnostics} className="mr-2">
+                          <div className="i-ph:bug-beetle-duotone" />
+                          {activeFileDiagnostics.filter((d) => d.severity === 'error').length > 0 ? (
+                            <span className="text-bolt-elements-icon-error">
+                              {activeFileDiagnostics.filter((d) => d.severity === 'error').length}
+                            </span>
+                          ) : activeFileDiagnostics.filter((d) => d.severity === 'warning').length > 0 ? (
+                            <span className="text-amber-500">
+                              {activeFileDiagnostics.filter((d) => d.severity === 'warning').length}
+                            </span>
+                          ) : (
+                            <span></span>
+                          )}
                         </PanelHeaderButton>
-                        <PanelHeaderButton onClick={onFileReset}>
-                          <div className="i-ph:clock-counter-clockwise-duotone" />
-                          Reset
-                        </PanelHeaderButton>
-                      </div>
-                    )}
+                      )}
+                      {activeFileUnsaved && (
+                        <>
+                          <PanelHeaderButton onClick={onFileSave}>
+                            <div className="i-ph:floppy-disk-duotone" />
+                            Save
+                          </PanelHeaderButton>
+                          <PanelHeaderButton onClick={onFileReset}>
+                            <div className="i-ph:clock-counter-clockwise-duotone" />
+                            Reset
+                          </PanelHeaderButton>
+                        </>
+                      )}
+                    </div>
                   </div>
                 )}
               </PanelHeader>
