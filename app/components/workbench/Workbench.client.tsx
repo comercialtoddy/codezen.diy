@@ -24,6 +24,7 @@ import { EditorPanel } from './EditorPanel';
 import { Preview } from './Preview';
 import useViewport from '~/lib/hooks';
 import { PushToGitHubDialog } from '~/components/@settings/tabs/connections/components/PushToGitHubDialog';
+import { StatusBar } from './StatusBar';
 
 interface WorkspaceProps {
   chatStarted?: boolean;
@@ -351,6 +352,12 @@ export const Workbench = memo(
       workbenchStore.currentView.set('diff');
     }, []);
 
+    const handleShowDependencyGraph = useCallback(() => {
+      workbenchStore.toggleTerminal(true);
+
+      // Selecionar a aba de grafo de dependências (implementação depende da integração com o TerminalTabs)
+    }, []);
+
     return (
       chatStarted && (
         <motion.div
@@ -443,6 +450,7 @@ export const Workbench = memo(
                     <Preview />
                   </View>
                 </div>
+                <StatusBar onShowGraph={handleShowDependencyGraph} />
               </div>
             </div>
           </div>

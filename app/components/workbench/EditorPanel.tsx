@@ -91,7 +91,13 @@ export const EditorPanel = memo(
         return;
       }
 
-      // Simulação de detecção de erro de sintaxe em TypeScript/JavaScript
+      /*
+       * Quando o documento muda, a atualização já é detectada pela FilesStore
+       * Não precisamos chamar explicitamente workspaceIndexService.queueFileForIndexing
+       * porque o serviço já está observando mudanças na FilesStore
+       */
+
+      // A detecção básica de sintaxe é mantida como fallback enquanto o indexador ainda não concluiu
       const detectJSErrors = (content: string, filePath: string) => {
         // Procurar por possíveis erros comuns de sintaxe
         const lines = content.split('\n');

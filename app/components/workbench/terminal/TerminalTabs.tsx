@@ -11,6 +11,7 @@ import { createScopedLogger } from '~/utils/logger';
 import { DiagnosticsTab } from '~/components/workbench/diagnostics/DiagnosticsTab';
 import { DiagnosticsPanel } from '~/components/workbench/diagnostics/DiagnosticsPanel';
 import { diagnosticsStore } from '~/lib/stores/diagnostics';
+import { DependencyGraph } from '~/components/workbench/dependencyGraph/DependencyGraph';
 
 const logger = createScopedLogger('Terminal');
 
@@ -18,12 +19,13 @@ const MAX_TERMINALS = 3;
 export const DEFAULT_TERMINAL_SIZE = 25;
 
 // Tab types
-type TabType = 'diagnostics' | 'terminal';
+type TabType = 'diagnostics' | 'terminal' | 'dependency-graph';
 
 export const TerminalTabs = memo(() => {
   const showTerminal = useStore(workbenchStore.showTerminal);
   const theme = useStore(themeStore);
   const allDiagnostics = useStore(diagnosticsStore.diagnostics);
+  const selectedFile = useStore(workbenchStore.selectedFile);
 
   const terminalRefs = useRef<Array<TerminalRef | null>>([]);
   const terminalPanelRef = useRef<ImperativePanelHandle>(null);
@@ -51,6 +53,15 @@ export const TerminalTabs = memo(() => {
     }
   };
 
+  const handleDependencyGraphTabClick = () => {
+    setActiveTab('dependency-graph');
+
+    // Make sure terminal panel is expanded if it's collapsed
+    if (terminalPanelRef.current?.isCollapsed()) {
+      workbenchStore.toggleTerminal(true);
+    }
+  };
+
   const handleTerminalTabClick = (index: number) => {
     setActiveTerminal(index);
     setActiveTab('terminal');
@@ -59,12 +70,18 @@ export const TerminalTabs = memo(() => {
   const handleDiagnosticSelect = (diagnostic: any) => {
     // Implementar a seleção de um item de diagnóstico (por exemplo, ir para o local do arquivo)
     if (diagnostic.filePath) {
+      workbenchStore.setSelectedFile(diagnostic.filePath);
+
       /*
-       * Como não temos acesso direto ao seletor de arquivo pelo workbenchStore,
-       * podemos emitir um evento ou usar outro método posteriormente quando disponível
+       * Como a navegação para linha/coluna específica não está implementada,
+       * apenas selecionamos o arquivo por enquanto
        */
       logger.debug(`Diagnostic selected: ${diagnostic.filePath} (${diagnostic.line}:${diagnostic.column})`);
     }
+  };
+
+  const handleFileSelect = (filePath: string) => {
+    workbenchStore.setSelectedFile(filePath);
   };
 
   useEffect(() => {
@@ -128,6 +145,23 @@ export const TerminalTabs = memo(() => {
             {/* Diagnostics Tab */}
             <DiagnosticsTab active={activeTab === 'diagnostics'} onClick={handleDiagnosticsTabClick} />
 
+            {/* Dependency Graph Tab */}
+            <button
+              className={classNames(
+                'flex items-center text-sm cursor-pointer gap-1.5 px-3 py-2 h-full whitespace-nowrap rounded-full',
+                {
+                  'bg-bolt-elements-terminals-buttonBackground text-bolt-elements-textPrimary':
+                    activeTab === 'dependency-graph',
+                  'bg-bolt-elements-background-depth-2 text-bolt-elements-textSecondary hover:bg-bolt-elements-terminals-buttonBackground':
+                    activeTab !== 'dependency-graph',
+                },
+              )}
+              onClick={handleDependencyGraphTabClick}
+            >
+              <div className="i-ph:graph-duotone text-lg" />
+              Dependências
+            </button>
+
             {/* Terminal Tabs */}
             <button
               className={classNames(
@@ -181,6 +215,11 @@ export const TerminalTabs = memo(() => {
           {/* Diagnostics Panel */}
           <div className={classNames('h-full overflow-hidden', { hidden: activeTab !== 'diagnostics' })}>
             <DiagnosticsPanel diagnostics={diagnosticsList} onDiagnosticSelect={handleDiagnosticSelect} />
+          </div>
+
+          {/* Dependency Graph Panel */}
+          <div className={classNames('h-full overflow-hidden', { hidden: activeTab !== 'dependency-graph' })}>
+            <DependencyGraph filePath={selectedFile} onFileSelect={handleFileSelect} />
           </div>
 
           {/* Terminal Panels */}
