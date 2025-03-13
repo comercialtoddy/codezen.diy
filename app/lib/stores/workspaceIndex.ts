@@ -63,11 +63,14 @@ class WorkspaceIndexStore {
    * Configura as atualizações periódicas do grafo
    */
   private _setupPeriodicUpdates() {
-    // Atualizar estatísticas a cada 2 segundos
+    /*
+     * CORRIGIDO: Aumento do intervalo de 2 segundos para 5 segundos
+     * para reduzir a frequência de polling e reindexações desnecessárias
+     */
     setInterval(() => {
       const graph = workspaceIndexService.getGraph();
       this._updateGraphStats(graph);
-    }, 2000);
+    }, 5000);
   }
 
   /**
@@ -113,18 +116,29 @@ class WorkspaceIndexStore {
 
     // Só atualiza se houver mudança
     const currentStats = this.stats.get();
+    let _statsChanged = false;
 
     if (
       currentStats.files !== filesCount ||
       currentStats.symbols !== symbolsCount ||
       currentStats.dependencies !== dependenciesCount
     ) {
+      _statsChanged = true;
       this.stats.set({
         files: filesCount,
         symbols: symbolsCount,
         dependencies: dependenciesCount,
       });
+    }
 
+    /*
+     * CORRIGIDO: Apenas atualizamos lastGraphUpdate quando ocorre uma
+     * mudança real no grafo (número de arquivos ou símbolos), e não
+     * apenas quando as estatísticas mudam
+     */
+    const hasStructuralChanges = currentStats.files !== filesCount || currentStats.symbols !== symbolsCount;
+
+    if (hasStructuralChanges) {
       this.lastGraphUpdate.set(Date.now());
     }
   }

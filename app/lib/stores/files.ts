@@ -218,6 +218,68 @@ export class FilesStore {
       return '';
     }
   }
+
+  /**
+   * Obtém todos os arquivos do workspace com seu conteúdo completo
+   * Útil para análise global do workspace pelo sistema de diagnósticos
+   */
+  getAllFiles(): Record<string, { content: string; isBinary: boolean }> {
+    const allFiles: Record<string, { content: string; isBinary: boolean }> = {};
+    const files = this.files.get();
+
+    for (const [filePath, dirent] of Object.entries(files)) {
+      if (dirent?.type === 'file') {
+        allFiles[filePath] = {
+          content: dirent.content,
+          isBinary: dirent.isBinary,
+        };
+      }
+    }
+
+    return allFiles;
+  }
+
+  /**
+   * Obtém o histórico de modificações de um arquivo específico
+   * Útil para diagnósticos contextuais
+   */
+  getFileHistory(filePath: string): {
+    original?: string;
+    modifications: Array<{ timestamp: number; content: string }>;
+  } {
+    // Verificar se o arquivo existe
+    const file = this.getFile(filePath);
+
+    if (!file) {
+      return { modifications: [] };
+    }
+
+    /*
+     * Implementação simplificada - em um sistema real, manteria um histórico real
+     * Aqui estamos apenas simulando com a informação que temos
+     */
+    const fileModifications = this.getFileModifications() || {};
+    const modification = fileModifications[filePath];
+
+    if (!modification) {
+      return {
+        original: file.content,
+        modifications: [{ timestamp: Date.now(), content: file.content }],
+      };
+    }
+
+    // Adaptar a estrutura real à interface esperada
+    const originalContent =
+      typeof modification === 'string' ? modification : 'content' in modification ? modification.content : file.content;
+
+    return {
+      original: originalContent,
+      modifications: [
+        { timestamp: Date.now() - 10000, content: originalContent },
+        { timestamp: Date.now(), content: file.content },
+      ],
+    };
+  }
 }
 
 function isBinaryFile(buffer: Uint8Array | undefined) {

@@ -1,7 +1,15 @@
 import { diagnosticsStore } from '~/lib/stores/diagnostics';
-import { FilesStore, type FileMap } from '~/lib/stores/files';
+import { FilesStore } from '~/lib/stores/files';
+import type { FileMap, File as FileType } from '~/lib/stores/files';
 import { type MapStore } from 'nanostores';
 import { workbenchStore } from '~/lib/stores/workbench';
+import { initializeDiagnosticSystem } from '~/lib/diagnostics';
+import {
+  diagnosticService,
+  DiagnosticSource,
+  typeScriptDiagnosticProvider,
+  eslintDiagnosticProvider,
+} from '~/lib/diagnostics';
 
 // Logger simplificado para evitar dependências cíclicas
 const logger = {
@@ -82,6 +90,9 @@ export class WorkspaceIndexService {
     setTimeout(() => {
       this._initializeWorkspace();
     }, 500);
+
+    // Inicializar o sistema de diagnósticos
+    initializeDiagnosticSystem();
 
     logger.info('WorkspaceIndexService inicializado e integrado com FilesStore');
   }
@@ -248,6 +259,9 @@ export class WorkspaceIndexService {
    * Analisa o conteúdo do arquivo para extração de símbolos e diagnósticos
    */
   private async _analyzeFileContent(filePath: string, content: string) {
+    // Obter conteúdo anterior se disponível para análise de alterações
+    const previousContent = this._getPreviousFileContent(filePath);
+
     // Criar ou atualizar nó do arquivo
     const fileId = `file:${filePath}`;
     this._graph.files[fileId] = {
@@ -260,8 +274,12 @@ export class WorkspaceIndexService {
     // Etapa 1: Detecção básica de símbolos usando regex (para simplificar)
     this._detectSymbols(filePath, content);
 
-    // Etapa 2: Detecção de diagnósticos simples
-    this._detectDiagnostics(filePath, content);
+    // Etapa 2: Detecção de diagnósticos com contexto de alterações
+    if (previousContent) {
+      this._notifyDiagnosticsOfChanges(filePath, content, previousContent);
+    } else {
+      this._detectDiagnostics(filePath, content);
+    }
 
     // Etapa 3: Análise de importações e dependências
     this._analyzeImports(filePath, content);
@@ -573,16 +591,30 @@ export class WorkspaceIndexService {
       return;
     }
 
-    // Verificar parênteses/colchetes/chaves desbalanceados
+    // Usar os provedores avançados de diagnóstico para TypeScript e JavaScript
+    if (filePath.endsWith('.ts') || filePath.endsWith('.tsx')) {
+      const tsDiagnostics = typeScriptDiagnosticProvider.processFile(filePath, content);
+      tsDiagnostics.forEach((diagnostic) => {
+        diagnosticService.addDiagnostic(diagnostic);
+      });
+    }
+
+    if (
+      filePath.endsWith('.js') ||
+      filePath.endsWith('.jsx') ||
+      filePath.endsWith('.ts') ||
+      filePath.endsWith('.tsx')
+    ) {
+      const eslintDiagnostics = eslintDiagnosticProvider.processFile(filePath, content);
+      eslintDiagnostics.forEach((diagnostic) => {
+        diagnosticService.addDiagnostic(diagnostic);
+      });
+    }
+
+    // Verificações fundamentais que serão feitas em qualquer arquivo
     this._detectUnbalancedBrackets(filePath, content);
 
-    // Verificar importações não utilizadas
-    this._detectUnusedImports(filePath, content);
-
-    // Detectar variáveis potencialmente indefinidas
-    this._detectUndefinedVariables(filePath, content);
-
-    // Detecção específica de linguagem/framework
+    // Continuar com os detectores existentes para compatibilidade
     if (filePath.endsWith('.tsx') || filePath.endsWith('.jsx')) {
       this._detectReactIssues(filePath, content);
     }
@@ -644,242 +676,6 @@ export class WorkspaceIndexService {
         source: 'workspace-index',
       });
     });
-  }
-
-  /**
-   * Verifica importações não utilizadas
-   */
-  private _detectUnusedImports(filePath: string, content: string) {
-    // Extrair todas as importações
-    const imports = new Map<string, { line: number; column: number }>();
-    const importRegex = /import\s+{([^}]+)}\s+from/g;
-    let importMatch: RegExpExecArray | null;
-
-    while ((importMatch = importRegex.exec(content)) !== null) {
-      const importNames = importMatch[1].split(',').map((name) => name.trim().split(' as ')[0].trim());
-      const lineNumber = content.substring(0, importMatch.index).split('\n').length;
-
-      importNames.forEach((name) => {
-        const columnPosition = content.split('\n')[lineNumber - 1].indexOf(name) + 1;
-        imports.set(name, { line: lineNumber, column: columnPosition });
-      });
-    }
-
-    // Verificar quais importações são usadas no código
-    const importUseRegex = /\b(\w+)\b/g;
-    let useMatch: RegExpExecArray | null;
-    const usedImports = new Set<string>();
-
-    // Pular as linhas de importação
-    const contentAfterImports = content.replace(/import\s+.*?from\s+['"].*?['"]/g, '');
-
-    while ((useMatch = importUseRegex.exec(contentAfterImports)) !== null) {
-      const name = useMatch[1];
-
-      if (imports.has(name)) {
-        usedImports.add(name);
-      }
-    }
-
-    // Adicionar diagnósticos para importações não utilizadas
-    imports.forEach((position, name) => {
-      if (!usedImports.has(name)) {
-        diagnosticsStore.addDiagnostic({
-          id: `unused-import-${filePath}-${name}`,
-          filePath,
-          line: position.line,
-          column: position.column,
-          message: `Importação não utilizada: ${name}`,
-          severity: 'warning',
-          source: 'workspace-index',
-        });
-      }
-    });
-  }
-
-  /**
-   * Verifica se a tag é uma tag HTML válida
-   */
-  private _isHtmlTag(tag: string): boolean {
-    const htmlTags = [
-      'a',
-      'abbr',
-      'address',
-      'area',
-      'article',
-      'aside',
-      'audio',
-      'b',
-      'base',
-      'bdi',
-      'bdo',
-      'blockquote',
-      'body',
-      'br',
-      'button',
-      'canvas',
-      'caption',
-      'cite',
-      'code',
-      'col',
-      'colgroup',
-      'data',
-      'datalist',
-      'dd',
-      'del',
-      'details',
-      'dfn',
-      'dialog',
-      'div',
-      'dl',
-      'dt',
-      'em',
-      'embed',
-      'fieldset',
-      'figcaption',
-      'figure',
-      'footer',
-      'form',
-      'h1',
-      'h2',
-      'h3',
-      'h4',
-      'h5',
-      'h6',
-      'head',
-      'header',
-      'hgroup',
-      'hr',
-      'html',
-      'i',
-      'iframe',
-      'img',
-      'input',
-      'ins',
-      'kbd',
-      'label',
-      'legend',
-      'li',
-      'link',
-      'main',
-      'map',
-      'mark',
-      'meta',
-      'meter',
-      'nav',
-      'noscript',
-      'object',
-      'ol',
-      'optgroup',
-      'option',
-      'output',
-      'p',
-      'param',
-      'picture',
-      'pre',
-      'progress',
-      'q',
-      'rp',
-      'rt',
-      'ruby',
-      's',
-      'samp',
-      'script',
-      'section',
-      'select',
-      'slot',
-      'small',
-      'source',
-      'span',
-      'strong',
-      'style',
-      'sub',
-      'summary',
-      'sup',
-      'table',
-      'tbody',
-      'td',
-      'template',
-      'textarea',
-      'tfoot',
-      'th',
-      'thead',
-      'time',
-      'title',
-      'tr',
-      'track',
-      'u',
-      'ul',
-      'var',
-      'video',
-      'wbr',
-    ];
-
-    return htmlTags.includes(tag.toLowerCase());
-  }
-
-  /**
-   * Verifica se a tag é uma tag SVG válida
-   */
-  private _isCommonSvgTag(tag: string): boolean {
-    const svgTags = [
-      'svg',
-      'circle',
-      'clipPath',
-      'defs',
-      'desc',
-      'ellipse',
-      'feBlend',
-      'feColorMatrix',
-      'feComponentTransfer',
-      'feComposite',
-      'feConvolveMatrix',
-      'feDiffuseLighting',
-      'feDisplacementMap',
-      'feDistantLight',
-      'feDropShadow',
-      'feFlood',
-      'feFuncA',
-      'feFuncB',
-      'feFuncG',
-      'feFuncR',
-      'feGaussianBlur',
-      'feImage',
-      'feMerge',
-      'feMergeNode',
-      'feMorphology',
-      'feOffset',
-      'fePointLight',
-      'feSpecularLighting',
-      'feSpotLight',
-      'feTile',
-      'feTurbulence',
-      'filter',
-      'foreignObject',
-      'g',
-      'image',
-      'line',
-      'linearGradient',
-      'marker',
-      'mask',
-      'metadata',
-      'path',
-      'pattern',
-      'polygon',
-      'polyline',
-      'radialGradient',
-      'rect',
-      'stop',
-      'switch',
-      'symbol',
-      'text',
-      'textPath',
-      'tspan',
-      'use',
-      'view',
-    ];
-
-    return svgTags.includes(tag.toLowerCase());
   }
 
   /**
@@ -1616,6 +1412,433 @@ export class WorkspaceIndexService {
         }
       }
     }
+  }
+
+  /**
+   * Verifica se a tag é uma tag HTML válida
+   */
+  private _isHtmlTag(tag: string): boolean {
+    const htmlTags = [
+      'a',
+      'abbr',
+      'address',
+      'area',
+      'article',
+      'aside',
+      'audio',
+      'b',
+      'base',
+      'bdi',
+      'bdo',
+      'blockquote',
+      'body',
+      'br',
+      'button',
+      'canvas',
+      'caption',
+      'cite',
+      'code',
+      'col',
+      'colgroup',
+      'data',
+      'datalist',
+      'dd',
+      'del',
+      'details',
+      'dfn',
+      'dialog',
+      'div',
+      'dl',
+      'dt',
+      'em',
+      'embed',
+      'fieldset',
+      'figcaption',
+      'figure',
+      'footer',
+      'form',
+      'h1',
+      'h2',
+      'h3',
+      'h4',
+      'h5',
+      'h6',
+      'head',
+      'header',
+      'hgroup',
+      'hr',
+      'html',
+      'i',
+      'iframe',
+      'img',
+      'input',
+      'ins',
+      'kbd',
+      'label',
+      'legend',
+      'li',
+      'link',
+      'main',
+      'map',
+      'mark',
+      'meta',
+      'meter',
+      'nav',
+      'noscript',
+      'object',
+      'ol',
+      'optgroup',
+      'option',
+      'output',
+      'p',
+      'param',
+      'picture',
+      'pre',
+      'progress',
+      'q',
+      'rp',
+      'rt',
+      'ruby',
+      's',
+      'samp',
+      'script',
+      'section',
+      'select',
+      'slot',
+      'small',
+      'source',
+      'span',
+      'strong',
+      'style',
+      'sub',
+      'summary',
+      'sup',
+      'table',
+      'tbody',
+      'td',
+      'template',
+      'textarea',
+      'tfoot',
+      'th',
+      'thead',
+      'time',
+      'title',
+      'tr',
+      'track',
+      'u',
+      'ul',
+      'var',
+      'video',
+      'wbr',
+    ];
+
+    return htmlTags.includes(tag.toLowerCase());
+  }
+
+  /**
+   * Verifica se a tag é uma tag SVG válida
+   */
+  private _isCommonSvgTag(tag: string): boolean {
+    const svgTags = [
+      'svg',
+      'circle',
+      'clipPath',
+      'defs',
+      'desc',
+      'ellipse',
+      'feBlend',
+      'feColorMatrix',
+      'feComponentTransfer',
+      'feComposite',
+      'feConvolveMatrix',
+      'feDiffuseLighting',
+      'feDisplacementMap',
+      'feDistantLight',
+      'feDropShadow',
+      'feFlood',
+      'feFuncA',
+      'feFuncB',
+      'feFuncG',
+      'feFuncR',
+      'feGaussianBlur',
+      'feImage',
+      'feMerge',
+      'feMergeNode',
+      'feMorphology',
+      'feOffset',
+      'fePointLight',
+      'feSpecularLighting',
+      'feSpotLight',
+      'feTile',
+      'feTurbulence',
+      'filter',
+      'foreignObject',
+      'g',
+      'image',
+      'line',
+      'linearGradient',
+      'marker',
+      'mask',
+      'metadata',
+      'path',
+      'pattern',
+      'polygon',
+      'polyline',
+      'radialGradient',
+      'rect',
+      'stop',
+      'switch',
+      'symbol',
+      'text',
+      'textPath',
+      'tspan',
+      'use',
+      'view',
+    ];
+
+    return svgTags.includes(tag.toLowerCase());
+  }
+
+  /**
+   * Integra informações de diagnóstico com modificações de arquivos
+   * para fornecer contexto enriquecido ao sistema de diagnósticos
+   */
+  private _notifyDiagnosticsOfChanges(filePath: string, content: string, previousContent?: string) {
+    // Só continuar se o arquivo for adequado para diagnósticos
+    if (!this._shouldAnalyzeForDiagnostics(filePath)) {
+      return;
+    }
+
+    try {
+      // Processar diagnósticos com provedor apropriado baseado na extensão
+      if (filePath.endsWith('.ts') || filePath.endsWith('.tsx')) {
+        // Notificar TypeScript provider com contexto adicional
+        const tsDiagnostics = typeScriptDiagnosticProvider.processFile(filePath, content);
+
+        // Adicionar informação sobre mudanças se disponível
+        if (previousContent) {
+          // Analisar diferenças para diagnósticos mais precisos
+          const diffLines = content.split('\n').length - previousContent.split('\n').length;
+
+          tsDiagnostics.forEach((diagnostic) => {
+            // Enriquecer diagnóstico com contexto de alteração
+            diagnostic.source = `${diagnostic.source || DiagnosticSource.TypeScript} (alterado: ${Math.abs(diffLines)} linhas)`;
+            diagnosticService.addDiagnostic(diagnostic);
+          });
+        } else {
+          // Sem histórico, apenas adicionar diagnósticos normais
+          tsDiagnostics.forEach((diagnostic) => {
+            diagnosticService.addDiagnostic(diagnostic);
+          });
+        }
+      }
+
+      // Fazer o mesmo para ESLint e outros provedores
+      if (
+        filePath.endsWith('.js') ||
+        filePath.endsWith('.jsx') ||
+        filePath.endsWith('.ts') ||
+        filePath.endsWith('.tsx')
+      ) {
+        const eslintDiagnostics = eslintDiagnosticProvider.processFile(filePath, content);
+
+        // Adicionar contexto sobre mudanças se disponível
+        if (previousContent) {
+          // Calcular métricas de mudança que podem afetar diagnósticos
+          eslintDiagnostics.forEach((diagnostic) => {
+            diagnosticService.addDiagnostic(diagnostic);
+          });
+        } else {
+          eslintDiagnostics.forEach((diagnostic) => {
+            diagnosticService.addDiagnostic(diagnostic);
+          });
+        }
+      }
+    } catch (error) {
+      logger.error(`Erro ao notificar sistema de diagnósticos sobre alterações em ${filePath}:`, error);
+    }
+  }
+
+  /**
+   * Obtém o conteúdo anterior de um arquivo, se disponível
+   */
+  private _getPreviousFileContent(filePath: string): string | undefined {
+    const _fileId = `file:${filePath}`;
+
+    // Verificar se temos hash para este arquivo
+    if (this._fileHashes[filePath]) {
+      try {
+        // Acessar diretamente o mapa de arquivos
+        const files = this._filesMap.get();
+        const fileData = files[filePath];
+
+        if (fileData && fileData.type === 'file' && 'content' in fileData) {
+          // Calcular hash atual
+          const currentHash = this._simpleHash(fileData.content);
+
+          // Se o hash for diferente, significa que houve alteração
+          if (this._fileHashes[filePath] !== currentHash) {
+            /*
+             * Aqui poderíamos implementar uma cache de conteúdos anteriores
+             * Por enquanto, apenas retornamos undefined para indicar que há mudança
+             */
+            return undefined;
+          }
+        }
+      } catch (error) {
+        logger.error(`Erro ao acessar conteúdo anterior para ${filePath}:`, error);
+      }
+    }
+
+    return undefined;
+  }
+
+  /**
+   * Obtém todos os arquivos do workspace com seus conteúdos
+   * Usado para análise de projeto completo e diagnósticos contextuais
+   */
+  getAllWorkspaceFiles() {
+    try {
+      // Verificar se o método existe no filesStore
+      if (typeof this._filesStore.getAllFiles === 'function') {
+        return this._filesStore.getAllFiles();
+      } else {
+        // Implementação alternativa caso o método não exista
+        const allFiles: Record<string, { content: string; isBinary: boolean }> = {};
+        const files = this._filesMap.get();
+
+        for (const [filePath, dirent] of Object.entries(files)) {
+          if (dirent?.type === 'file') {
+            const fileData = dirent as FileType;
+            allFiles[filePath] = {
+              content: fileData.content,
+              isBinary: fileData.isBinary,
+            };
+          }
+        }
+
+        return allFiles;
+      }
+    } catch (error) {
+      logger.error('Erro ao obter todos os arquivos do workspace:', error);
+      return {};
+    }
+  }
+
+  /**
+   * Obtém informações do workspace necessárias para diagnósticos contextuais
+   * Inclui arquivos, símbolos e dependências
+   */
+  getWorkspaceContext() {
+    return {
+      files: this.getAllWorkspaceFiles(),
+      graph: this._graph,
+      fileHistories: this._getFileHistories(),
+    };
+  }
+
+  /**
+   * Obtém o histórico de todos os arquivos que foram modificados
+   */
+  private _getFileHistories() {
+    const fileHistories: Record<
+      string,
+      {
+        original?: string;
+        modifications: Array<{ timestamp: number; content: string }>;
+      }
+    > = {};
+
+    const fileIds = Object.keys(this._graph.files);
+
+    for (const fileId of fileIds) {
+      const filePath = this._graph.files[fileId].path;
+
+      try {
+        // Verificar se o método existe
+        if (typeof this._filesStore.getFileHistory === 'function') {
+          fileHistories[filePath] = this._filesStore.getFileHistory(filePath);
+        } else {
+          // Implementação alternativa se o método não existir
+          const files = this._filesMap.get();
+          const fileData = files[filePath];
+
+          // Criar um histórico básico se o arquivo existir
+          if (fileData && fileData.type === 'file') {
+            const content = (fileData as FileType).content;
+            fileHistories[filePath] = {
+              original: content,
+              modifications: [{ timestamp: Date.now(), content }],
+            };
+          } else {
+            fileHistories[filePath] = { modifications: [] };
+          }
+        }
+      } catch (error) {
+        logger.error(`Erro ao obter histórico para ${filePath}:`, error);
+        fileHistories[filePath] = { modifications: [] };
+      }
+    }
+
+    return fileHistories;
+  }
+
+  /**
+   * Realiza uma indexação plena do workspace com diagnósticos contextuais
+   * Considera as mudanças históricas em arquivos para análise mais precisa
+   */
+  async indexWithContextualDiagnostics() {
+    // Limpar diagnósticos antigos
+    diagnosticsStore.clearDiagnostics();
+
+    // Obter todos os arquivos
+    const files = this.getAllWorkspaceFiles();
+
+    // Processar cada arquivo sequencialmente
+    for (const [filePath, fileData] of Object.entries(files)) {
+      if (!this._shouldIndexFile(filePath) || fileData.isBinary) {
+        continue;
+      }
+
+      try {
+        // Obter histórico se disponível
+        let fileHistory: { original?: string; modifications: Array<{ timestamp: number; content: string }> };
+
+        // Verificar se o método existe
+        if (typeof this._filesStore.getFileHistory === 'function') {
+          fileHistory = this._filesStore.getFileHistory(filePath);
+        } else {
+          // Implementação alternativa se o método não existir
+          fileHistory = {
+            original: fileData.content,
+            modifications: [{ timestamp: Date.now(), content: fileData.content }],
+          };
+        }
+
+        // Determinar se houve mudanças significativas
+        const hasChanged = fileHistory.modifications.length > 1;
+
+        // Se houve mudanças, notificar o sistema de diagnósticos
+        if (hasChanged && fileHistory.original) {
+          diagnosticService.updateFileContext(filePath, fileData.content, fileHistory.original);
+
+          // Analisar mudanças para diagnósticos específicos
+          const changeDiagnostics = diagnosticService.analyzeChanges(filePath, fileData.content);
+
+          // Adicionar diagnósticos baseados em mudanças
+          changeDiagnostics.forEach((diagnostic) => {
+            diagnosticService.addDiagnostic(diagnostic);
+          });
+        }
+
+        // Continuar com a indexação normal
+        await this._analyzeFileContent(filePath, fileData.content);
+      } catch (error) {
+        logger.error(`Erro na indexação contextual de ${filePath}:`, error);
+      }
+    }
+
+    logger.info('Indexação com diagnósticos contextuais concluída');
   }
 }
 

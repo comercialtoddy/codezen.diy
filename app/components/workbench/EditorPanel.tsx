@@ -1,5 +1,5 @@
 import { useStore } from '@nanostores/react';
-import { memo, useEffect, useMemo } from 'react';
+import { memo, useEffect, useMemo, useRef } from 'react';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import {
   CodeMirrorEditor,
@@ -23,6 +23,8 @@ import { DEFAULT_TERMINAL_SIZE, TerminalTabs } from './terminal/TerminalTabs';
 import { workbenchStore } from '~/lib/stores/workbench';
 import { diagnosticsStore } from '~/lib/stores/diagnostics';
 import type { DiagnosticItem } from './diagnostics/DiagnosticsPanel';
+import { diagnosticDecorationService } from '~/lib/diagnostics';
+import { diagnosticService, DiagnosticSource } from '~/lib/diagnostics';
 
 interface EditorPanelProps {
   files?: FileMap;
@@ -82,45 +84,102 @@ export const EditorPanel = memo(
       return allDiagnostics[editorDocument.filePath] || [];
     }, [editorDocument, allDiagnostics]);
 
+    // Adicionar um ref para registrar o renderizador de diagnósticos
+    const editorRef = useRef<string | null>(null);
+
+    useEffect(() => {
+      // Registrar um ID único para o editor
+      if (!editorRef.current) {
+        editorRef.current = `editor-${Date.now()}`;
+      }
+
+      // Retornar função de limpeza para desregistrar o renderizador quando o componente é desmontado
+      return () => {
+        if (editorRef.current) {
+          diagnosticDecorationService.unregisterRenderer(editorRef.current);
+        }
+      };
+    }, []);
+
     /*
-     * Exemplo de como poderia detectar erros de sintaxe
-     * Na prática, isso seria integrado a um linter real como ESLint
+     * Integração com o sistema de diagnósticos
      */
     useEffect(() => {
       if (!editorDocument || isStreaming) {
         return;
       }
 
-      /*
-       * Quando o documento muda, a atualização já é detectada pela FilesStore
-       * Não precisamos chamar explicitamente workspaceIndexService.queueFileForIndexing
-       * porque o serviço já está observando mudanças na FilesStore
-       */
+      // Criar renderizador para o editor atual
+      if (editorRef.current) {
+        diagnosticDecorationService.createCodeMirrorRenderer(editorRef.current, editorDocument.filePath, {
+          showInline: true,
+          showGutter: true,
+          showUnderline: true,
+        });
+      }
 
-      // A detecção básica de sintaxe é mantida como fallback enquanto o indexador ainda não concluiu
-      const detectJSErrors = (content: string, filePath: string) => {
-        // Procurar por possíveis erros comuns de sintaxe
+      // Limpar diagnósticos antigos
+      diagnosticsStore.clearDiagnostics(editorDocument.filePath);
+
+      // Obter o arquivo original
+      const originalFile = files && files[editorDocument.filePath];
+      const originalContent = originalFile && 'content' in originalFile ? originalFile.content : undefined;
+
+      // Atualizar contexto de arquivo no serviço de diagnóstico
+      if (originalContent) {
+        diagnosticService.updateFileContext(editorDocument.filePath, editorDocument.value, originalContent);
+
+        // Analisar alterações para diagnósticos contextuais
+        const changeDiagnostics = diagnosticService.analyzeChanges(editorDocument.filePath, editorDocument.value);
+
+        // Adicionar diagnósticos baseados em alterações
+        changeDiagnostics.forEach((diagnostic) => {
+          diagnosticService.addDiagnostic(diagnostic);
+        });
+      }
+
+      /*
+       * Verificação básica de sintaxe para qualquer arquivo
+       * usado como fallback enquanto o indexador não processa o arquivo
+       */
+      const basicSyntaxCheck = (content: string, filePath: string): DiagnosticItem[] => {
         const lines = content.split('\n');
         const diagnostics: DiagnosticItem[] = [];
 
         lines.forEach((line, index) => {
-          // Exemplo: verificar parênteses não fechados
+          // Verificar parênteses não fechados
           const openParens = (line.match(/\(/g) || []).length;
           const closeParens = (line.match(/\)/g) || []).length;
 
           if (openParens !== closeParens) {
             diagnostics.push({
-              id: `syntax-error-${filePath}-${index}`,
+              id: `syntax-error-${filePath}-${index}-parens`,
               filePath,
               line: index + 1,
               column: line.indexOf('(') + 1 || 1,
               message: 'Parênteses não estão balanceados nesta linha',
               severity: 'error',
-              source: 'syntax-checker',
+              source: DiagnosticSource.Syntax,
             });
           }
 
-          // Exemplo: verificar ponto-e-vírgula faltando em JS/TS
+          // Verificar chaves não fechadas
+          const openCurly = (line.match(/\{/g) || []).length;
+          const closeCurly = (line.match(/\}/g) || []).length;
+
+          if (openCurly !== closeCurly) {
+            diagnostics.push({
+              id: `syntax-error-${filePath}-${index}-curly`,
+              filePath,
+              line: index + 1,
+              column: line.indexOf('{') + 1 || 1,
+              message: 'Chaves não estão balanceadas nesta linha',
+              severity: 'error',
+              source: DiagnosticSource.Syntax,
+            });
+          }
+
+          // Verificar ponto-e-vírgula faltando em JS/TS
           if (/^.*\b(const|let|var).*=.*[^;,){]$/.test(line)) {
             diagnostics.push({
               id: `syntax-error-${filePath}-${index}-semicolon`,
@@ -129,7 +188,7 @@ export const EditorPanel = memo(
               column: line.length,
               message: 'Ponto-e-vírgula (;) faltando',
               severity: 'warning',
-              source: 'syntax-checker',
+              source: DiagnosticSource.Syntax,
             });
           }
         });
@@ -137,19 +196,26 @@ export const EditorPanel = memo(
         return diagnostics;
       };
 
-      // Apenas para fins de demo, detecte erros apenas em arquivos JS/TS
+      // Use o sistema de diagnósticos para análise rápida
       if (editorDocument.filePath.match(/\.(js|jsx|ts|tsx)$/)) {
-        const diagnostics = detectJSErrors(editorDocument.value, editorDocument.filePath);
+        const diagnostics = basicSyntaxCheck(editorDocument.value, editorDocument.filePath);
 
-        // Limpar diagnósticos anteriores
-        diagnosticsStore.clearDiagnostics(editorDocument.filePath);
-
-        // Adicionar novos diagnósticos
+        // Adicionar os diagnósticos através do serviço
         diagnostics.forEach((diagnostic) => {
-          diagnosticsStore.addDiagnostic(diagnostic);
+          // Usar a versão mais avançada do sistema
+          diagnosticService.addDiagnostic({
+            id: diagnostic.id,
+            filePath: diagnostic.filePath,
+            line: diagnostic.line,
+            column: diagnostic.column,
+            message: diagnostic.message,
+            severity: diagnostic.severity,
+            source: diagnostic.source,
+            code: diagnostic.code,
+          });
         });
       }
-    }, [editorDocument, isStreaming]);
+    }, [editorDocument, isStreaming, files]);
 
     const handleToggleDiagnostics = () => {
       diagnosticsStore.toggleDiagnosticsPanel();
