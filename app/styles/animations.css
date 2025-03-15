@@ -1,0 +1,45 @@
+@keyframes pulse-gentle {
+  0% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+.animate-pulse-gentle {
+  animation: pulse-gentle 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes border-flash {
+  0% {
+    border-color: var(--bolt-elements-icon-error);
+  }
+  50% {
+    border-color: transparent;
+  }
+  100% {
+    border-color: var(--bolt-elements-icon-error);
+  }
+}
+
+.animate-border-flash {
+  animation: border-flash 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes scale-bounce {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+}
+
+.animate-scale-bounce {
+  animation: scale-bounce 2s ease-in-out infinite;
+}
