@@ -38,7 +38,21 @@ async function streamToText(stream: ReadableStream, transformer?: (text: string)
         break;
       }
 
-      result += decoder.decode(value, { stream: true });
+      // Verificar se o valor é uma instância válida de Uint8Array ou similar
+      if (value && (value instanceof Uint8Array || value.buffer instanceof ArrayBuffer)) {
+        result += decoder.decode(value, { stream: true });
+      } else if (value) {
+        // Log para depuração do tipo de valor recebido
+        logger.warn(`Valor inesperado recebido no stream: ${typeof value}, skipping decode`);
+
+        // Tentar converter para string caso seja outro tipo
+        try {
+          result += String(value);
+        } catch (e) {
+          // Ignorar se não puder converter
+          logger.error('Não foi possível converter valor para string:', e);
+        }
+      }
     }
     // Last chunk with stream: false to ensure proper decoding
     result += decoder.decode(undefined, { stream: false });
@@ -372,6 +386,11 @@ async function uiAnalysisAction({ context, request }: ActionFunctionArgs) {
     // If we have an ID, save the stream in cache for later retrieval via EventSource
     if (id) {
       try {
+        // Verificar se o stream é válido antes de clonar
+        if (!result.textStream || typeof result.textStream.tee !== 'function') {
+          throw new Error('Stream inválido: não é possível clonar o stream');
+        }
+
         // Clone the stream to preserve the original
         const clonedStream = result.textStream.tee();
 
@@ -384,6 +403,11 @@ async function uiAnalysisAction({ context, request }: ActionFunctionArgs) {
         // Process the stream in the background and update the cache
         (async () => {
           try {
+            // Verificar se o stream clonado é válido
+            if (!clonedStream[0] || typeof clonedStream[0].getReader !== 'function') {
+              throw new Error('Stream clonado inválido');
+            }
+
             // Convert the first stream to text
             const fullText = await streamToText(clonedStream[0]);
 
