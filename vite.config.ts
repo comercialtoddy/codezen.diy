@@ -95,6 +95,7 @@ export default defineConfig((config) => {
     build: {
       target: 'esnext',
       rollupOptions: {
+        external: ['pdfjs-dist'],
         output: {
           format: 'esm',
         },
@@ -136,7 +137,24 @@ export default defineConfig((config) => {
               map: null,
             };
           }
-        },
+          return null;
+        }
+      },
+      {
+        name: 'process-versions-polyfill',
+        transform(code, id) {
+          // Intercepta o módulo AWS SDK que precisa de process.versions
+          if (id.includes('@aws-sdk/util-user-agent-node/dist-es/defaultUserAgent')) {
+            return {
+              code: code.replace(
+                `import { env, versions } from "process";`,
+                `import { env } from "process"; const versions = {};`
+              ),
+              map: null
+            };
+          }
+          return null;
+        }
       },
       config.mode !== 'test' && remixCloudflareDevProxy(),
       remixVitePlugin({
