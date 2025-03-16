@@ -1,16 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { getDocument } from 'pdfjs-dist';
-import { GlobalWorkerOptions } from 'pdfjs-dist';
 import UIAnalysisButton from './UIAnalysisButton';
 import type { ProviderInfo } from '~/types/model';
 
-// Import the worker as a virtual URL from Vite (if not configured elsewhere)
-const pdfjsWorkerUrl = new URL('pdfjs-dist/build/pdf.worker.mjs', import.meta.url).href;
-
-// Configure the worker if not already configured
-if (typeof window !== 'undefined' && !GlobalWorkerOptions.workerSrc) {
-  GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl;
-}
+// PDF.js será importado dinamicamente apenas no cliente
+let getDocument: any;
+let GlobalWorkerOptions: any;
 
 interface FilePreviewProps {
   files: File[];
@@ -35,9 +29,42 @@ const FilePreview: React.FC<FilePreviewProps> = ({
   onUiAnalysisComplete,
 }) => {
   const [pdfThumbnails, setPdfThumbnails] = useState<Record<string, PDFThumbnailData>>({});
+  const [isPdfJsLoaded, setIsPdfJsLoaded] = useState(false);
+  const [isClientSide, setIsClientSide] = useState(false);
+
+  // Verificar se estamos no cliente
+  useEffect(() => {
+    setIsClientSide(typeof window !== 'undefined');
+  }, []);
+
+  // Verificar se PDF.js foi carregado
+  useEffect(() => {
+    if (isClientSide) {
+      import('pdfjs-dist')
+        .then((pdfjs) => {
+          getDocument = pdfjs.getDocument;
+          GlobalWorkerOptions = pdfjs.GlobalWorkerOptions;
+
+          // Configure o worker após a importação
+          if (!GlobalWorkerOptions.workerSrc) {
+            const pdfjsWorkerUrl = new URL('pdfjs-dist/build/pdf.worker.mjs', import.meta.url).href;
+            GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl;
+          }
+
+          setIsPdfJsLoaded(true);
+        })
+        .catch((err) => {
+          console.error('Error loading PDF.js:', err);
+        });
+    }
+  }, [isClientSide]);
 
   useEffect(() => {
-    // Process PDF thumbnails
+    // Process PDF thumbnails only when PDF.js is loaded and we're in the browser
+    if (!isPdfJsLoaded || !isClientSide) {
+      return;
+    }
+
     const processPdfThumbnails = async () => {
       for (const file of files) {
         // Check if it's a PDF and doesn't have a thumbnail yet
@@ -90,7 +117,7 @@ const FilePreview: React.FC<FilePreviewProps> = ({
     };
 
     processPdfThumbnails();
-  }, [files, pdfThumbnails]);
+  }, [files, pdfThumbnails, isPdfJsLoaded, isClientSide]);
 
   if (!files || files.length === 0) {
     return null;
@@ -130,7 +157,12 @@ const FilePreview: React.FC<FilePreviewProps> = ({
 
   // Function to get a PDF thumbnail
   const getPdfThumbnail = (file: File) => {
+    if (!isClientSide || !isPdfJsLoaded) {
+      return null;
+    }
+
     const key = file.name + file.lastModified;
+
     return pdfThumbnails[key];
   };
 
@@ -182,7 +214,7 @@ const FilePreview: React.FC<FilePreviewProps> = ({
                 </div>
                 <div className="text-[8px] text-bolt-elements-textTertiary">{formatFileSize(file.size)}</div>
               </div>
-            ) : isPdf(file) && getPdfThumbnail(file) ? (
+            ) : isPdf(file) && isClientSide && getPdfThumbnail(file) ? (
               // Renders PDF thumbnail
               <div className="flex flex-col items-center justify-center bg-bolt-elements-background-depth-3 rounded-md p-1.5 min-w-[35px] border border-gray-700 shadow-sm">
                 <div className="relative">
@@ -195,6 +227,15 @@ const FilePreview: React.FC<FilePreviewProps> = ({
                     {getPdfThumbnail(file)?.pageCount || '?'} pgs
                   </div>
                 </div>
+                <div className="text-[8px] text-bolt-elements-textSecondary mt-0.5 max-w-[70px] truncate">
+                  {file.name}
+                </div>
+                <div className="text-[8px] text-bolt-elements-textTertiary">{formatFileSize(file.size)}</div>
+              </div>
+            ) : isPdf(file) ? (
+              // Renders PDF icon when thumbnail is not yet available
+              <div className="flex flex-col items-center justify-center bg-bolt-elements-background-depth-3 rounded-md p-1.5 min-w-[35px] h-[70px] border border-gray-700 shadow-sm">
+                <div className="i-ph:file-pdf w-5 h-5 text-bolt-elements-textSecondary" />
                 <div className="text-[8px] text-bolt-elements-textSecondary mt-0.5 max-w-[70px] truncate">
                   {file.name}
                 </div>
