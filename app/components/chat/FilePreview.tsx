@@ -181,14 +181,6 @@ const FilePreview: React.FC<FilePreviewProps> = ({
                   {file.name}
                 </div>
                 <div className="text-[8px] text-bolt-elements-textTertiary">{formatFileSize(file.size)}</div>
-
-                {/* UI analysis indicator available */}
-                {file.type.startsWith('image/') && provider && onUiAnalysisComplete && (
-                  <div className="mt-1 flex items-center justify-center text-[7px] text-indigo-400 bg-indigo-900/30 rounded px-1 py-0.5 border border-indigo-500/50">
-                    <div className="i-ph:magic-wand-fill mr-0.5 text-[8px]" />
-                    <span>UI Análise</span>
-                  </div>
-                )}
               </div>
             ) : isPdf(file) && getPdfThumbnail(file) ? (
               // Renders PDF thumbnail

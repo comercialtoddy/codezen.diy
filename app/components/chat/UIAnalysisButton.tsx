@@ -29,52 +29,50 @@ const uiAnalysisButton: React.FC<UIAnalysisButtonProps> = ({
 
     const toastId = toast.info(
       <div>
-        <div className="font-bold">Analisando interface UI/UX...</div>
-        <div className="text-xs text-gray-200 bg-gray-800 p-2 mt-1 rounded">Isso pode levar alguns instantes.</div>
+        <div className="font-bold">Analyzing UI/UX...</div>
+        <div className="text-xs text-gray-200 bg-gray-800 p-2 mt-1 rounded">This may take a while.</div>
       </div>,
       { autoClose: false },
     );
 
     try {
-      // Limpa o input atual e notifica o início do processo
+      // Clear the current input and notify the start of the process
       onAnalysisComplete('');
 
-      // Pequeno delay para garantir que a UI atualize
+      // Small delay to ensure the UI updates
       await new Promise((resolve) => setTimeout(resolve, 100));
 
-      // Texto inicial para informar ao usuário
-      onAnalysisComplete(
-        'Gerando análise da interface UI/UX...\n\nEste processo pode levar até 1 minuto, dependendo da complexidade da imagem.',
-      );
+      // Initial text to inform the user
+      onAnalysisComplete('Generating UI/UX analysis in up to 1 minute...');
 
-      // Preparar os dados para envio
+      // Prepare the data for sending
       const formData = new FormData();
       formData.append('imageData', imageData);
       formData.append('model', model);
       formData.append('provider', JSON.stringify(provider));
 
-      console.log(`Enviando requisição para análise de UI com modelo: ${model}`);
+      console.log(`Sending request for UI analysis with model: ${model}`);
 
-      // Abordagem 1: Usando EventSource para processar SSE de forma nativa
+      // Approach 1: Using EventSource to process SSE natively
       try {
-        // Primeiro tentamos usar a abordagem nativa de SSE (mais confiável para streaming)
+        // First, we try the native SSE approach (more reliable for streaming)
         await processWithEventSource(formData, onAnalysisComplete, toastId.toString());
       } catch (eventSourceError) {
-        console.warn('Falha no processamento com EventSource, tentando método alternativo:', eventSourceError);
-        // Se falhar, tentamos a abordagem com fetch
+        console.warn('Failed to process with EventSource, trying alternative method:', eventSourceError);
+        // If it fails, we try the fetch approach
         await processWithFetch(formData, onAnalysisComplete, toastId.toString());
       }
     } catch (error) {
-      console.error('Erro na análise de UI:', error);
-      // Insere uma mensagem de erro no input
-      onAnalysisComplete('Erro na análise de interface. Por favor, tente novamente.');
+      console.error('Error in UI analysis:', error);
+      // Inserts an error message in the input
+      onAnalysisComplete('Error in interface analysis. Please try again.');
 
       toast.update(toastId, {
         render: (
           <div>
-            <div className="font-bold">Erro na análise</div>
+            <div className="font-bold">Analysis error</div>
             <div className="text-xs text-gray-200 bg-gray-800 p-2 mt-1 rounded">
-              {error instanceof Error ? error.message : 'Ocorreu um erro desconhecido'}
+              {error instanceof Error ? error.message : 'An unknown error occurred'}
             </div>
           </div>
         ),
@@ -86,119 +84,119 @@ const uiAnalysisButton: React.FC<UIAnalysisButtonProps> = ({
     }
   };
 
-  // Define interface para a resposta da API
+  // Define interface for the API response
   interface AnalysisResponse {
     status: string;
     id: string;
   }
 
-  // Função para processar usando o EventSource (melhor para SSE)
+  // Function to process using EventSource (better for SSE)
   const processWithEventSource = (formData: FormData, onAnalysisComplete: (text: string) => void, toastId: string) => {
     return new Promise((resolve, reject) => {
-      // Criamos um endpoint de proxy temporário devido às limitações do EventSource
+      // We create a temporary proxy endpoint due to EventSource limitations
       const uniqueId = Date.now().toString();
       const url = `/api/ui-analysis?id=${uniqueId}`;
 
-      console.log('Iniciando análise de UI com ID:', uniqueId);
+      console.log('Starting UI analysis with ID:', uniqueId);
 
-      // Enviamos os dados primeiro com o ID no URL para associar ao cache
+      // We send the data first with the ID in the URL to associate with the cache
       fetch(`/api/ui-analysis?id=${uniqueId}`, {
         method: 'POST',
         body: formData,
       })
         .then((response) => {
           if (!response.ok) {
-            throw new Error(`Erro na resposta do servidor: ${response.status} ${response.statusText}`);
+            throw new Error(`Error in server response: ${response.status} ${response.statusText}`);
           }
 
-          // Aguardamos a resposta JSON para confirmar que o processamento foi iniciado
+          // We wait for the JSON response to confirm that processing has started
           return response.json() as Promise<AnalysisResponse>;
         })
         .then((_data) => {
           if (!_data || !_data.status || _data.status !== 'processing') {
-            throw new Error('Resposta inválida do servidor durante inicialização da análise');
+            throw new Error('Invalid server response during analysis initialization');
           }
 
-          console.log('Processamento iniciado no servidor, ID:', _data.id);
+          console.log('Processing started on the server, ID:', _data.id);
 
           /*
-           * Aumentamos o delay para garantir que o cache esteja pronto no servidor
-           * O servidor agora processa o stream em background, então precisamos esperar mais
+           * We increase the delay to ensure that the cache is ready on the server
+           * The server now processes the stream in the background, so we need to wait longer
            */
           return new Promise<AnalysisResponse>((resolve) => setTimeout(() => resolve(_data), 1500));
         })
         .then((_data) => {
           /*
-           * Se o fetch for bem sucedido e o servidor respondeu com status "processing",
-           * agora podemos criar o EventSource
+           * If the fetch is successful and the server responds with status "processing",
+           * we can now create the EventSource
            */
-          console.log('Iniciando EventSource para receber os dados...');
+          console.log('Starting EventSource to receive the data...');
 
-          // Criamos o EventSource com retry automático
+          // We create the EventSource with automatic retry
           const eventSource = new EventSource(url);
           let result = '';
           let retryCount = 0;
           const maxRetries = 3;
 
-          // Definimos um timeout para garantir que não ficamos esperando indefinidamente
+          // We define a timeout to ensure we don't wait indefinitely
           const timeoutId = setTimeout(() => {
-            console.warn('Timeout ao aguardar dados do EventSource');
+            console.warn('Timeout while waiting for EventSource data');
             eventSource.close();
 
-            // Se já temos algum resultado, usamos ele mesmo incompleto
+            // If we already have some result, we use it even if it's incomplete
             if (result && result.trim() !== '') {
-              console.log('Usando resultado parcial obtido até o momento');
+              console.log('Using partial result obtained so far');
               onAnalysisComplete(result);
               resolve('partial-success');
             } else {
-              // Caso contrário, tentamos o método alternativo
-              reject(new Error('Timeout ao aguardar dados do EventSource'));
+              // Otherwise, we try the alternative method
+              reject(new Error('Timeout while waiting for EventSource data'));
             }
-          }, 30000); // 30 segundos de timeout
+          }, 30000); // 30 seconds timeout
 
           eventSource.onmessage = (event) => {
-            // Limpa o timeout a cada mensagem recebida
+            // Clear the timeout with each received message
             clearTimeout(timeoutId);
 
-            console.log('Evento SSE recebido:', event.data.substring(0, 50) + '...');
+            console.log('SSE event received:', event.data.substring(0, 50) + '...');
 
             if (event.data === '[DONE]') {
-              console.log('Stream concluído com sucesso');
+              console.log('Stream completed successfully');
               eventSource.close();
               clearTimeout(timeoutId);
 
-              // Verificar se obtivemos algum texto
+              // Check if we obtained any text
               if (!result || result.trim() === '') {
                 eventSource.close();
-                reject(new Error('Nenhum texto foi gerado pela análise'));
+                reject(new Error('No text was generated by the analysis'));
 
                 return;
               }
 
-              // Verifica se o resultado contém as tags esperadas antes de atualizar
+              // Check if the result contains the expected tags before updating
               const containsStructure =
                 result.includes('<summary_title>') &&
                 result.includes('<image_analysis>') &&
                 result.includes('<development_planning>') &&
                 result.includes('<implementation_requirements>');
 
-              // Atualiza o texto no input incrementalmente
+              // Update the text in the input incrementally
               if (containsStructure) {
                 onAnalysisComplete(result);
               } else if (result.trim() !== '') {
                 /*
-                 * Se ainda não temos a estrutura completa, continuamos mostrando a mensagem de processamento
-                 * mas adicionamos o texto que está chegando para dar feedback visual
+                 * If we still don't have the complete structure, we continue showing the processing message
+                 * but add the incoming text to provide visual feedback
                  */
-                onAnalysisComplete('Gerando análise da interface UI/UX...\n\n' + result);
+                onAnalysisComplete('Generating UI/UX interface analysis...\n\n' + result);
               }
 
               toast.update(toastId, {
                 render: (
                   <div>
-                    <div className="font-bold">Análise concluída!</div>
+                    <div className="font-bold">Analysis completed!</div>
                     <div className="text-xs text-gray-200 bg-gray-800 p-2 mt-1 rounded">
-                      Prompt estruturado gerado com sucesso.
+                      Prompt structured generated successfully.
                     </div>
                   </div>
                 ),
@@ -212,25 +210,25 @@ const uiAnalysisButton: React.FC<UIAnalysisButtonProps> = ({
             }
 
             try {
-              // Acumula o resultado
+              // Accumulate the result
               result += event.data;
 
-              // Verifica se o resultado contém as tags esperadas antes de atualizar
+              // Check if the result contains the expected tags before updating
               const containsStructure =
                 result.includes('<summary_title>') &&
                 result.includes('<image_analysis>') &&
                 result.includes('<development_planning>') &&
                 result.includes('<implementation_requirements>');
 
-              // Atualiza o texto no input incrementalmente
+              // Update the text in the input incrementally
               if (containsStructure) {
                 onAnalysisComplete(result);
               } else if (result.trim() !== '') {
-                // Se ainda não temos a estrutura completa, continuamos mostrando a mensagem de processamento
-                onAnalysisComplete('Gerando análise da interface UI/UX...\n\n' + result);
+                // If we still don't have the complete structure, we continue showing the processing message
+                onAnalysisComplete('Generating UI/UX interface analysis...\n\n' + result);
               }
             } catch (e) {
-              console.error('Erro processando evento:', e);
+              console.error('Error processing event:', e);
               eventSource.close();
               clearTimeout(timeoutId);
               reject(e);
@@ -238,24 +236,24 @@ const uiAnalysisButton: React.FC<UIAnalysisButtonProps> = ({
           };
 
           eventSource.onerror = (error) => {
-            console.error('Erro no EventSource:', error);
+            console.error('Error in EventSource:', error);
 
-            // Implementamos uma lógica de retry
+            // We implement a retry logic
             retryCount++;
 
             if (retryCount <= maxRetries) {
-              console.log(`Tentativa ${retryCount}/${maxRetries} de reconexão...`);
-              // O EventSource tenta reconectar automaticamente
+              console.log(`Attempt ${retryCount}/${maxRetries} to reconnect...`);
+              // EventSource tries to reconnect automatically
               return;
             }
 
-            // Se excedeu o número de retries, fechamos a conexão
+            // If the number of retries is exceeded, we close the connection
             eventSource.close();
             clearTimeout(timeoutId);
 
-            // Se já temos algum resultado, usamos ele mesmo incompleto
+            // If we already have some result, we use it even if it's incomplete
             if (result && result.trim() !== '') {
-              console.log('Usando resultado parcial obtido até o momento');
+              console.log('Using partial result obtained so far');
               onAnalysisComplete(result);
               resolve('partial-success');
             } else {
@@ -264,45 +262,45 @@ const uiAnalysisButton: React.FC<UIAnalysisButtonProps> = ({
           };
         })
         .catch((error) => {
-          console.error('Erro na configuração do EventSource:', error);
+          console.error('Error setting up EventSource:', error);
           reject(error);
         });
     });
   };
 
-  // Função para processar usando o fetch tradicional (fallback)
+  // Function to process using traditional fetch (fallback)
   const processWithFetch = async (
     formData: FormData,
     onAnalysisComplete: (text: string) => void,
     toastId: string,
   ): Promise<void> => {
-    // Tentativa com fetch tradicional
+    // Attempt with traditional fetch
     const response = await fetch('/api/ui-analysis', {
       method: 'POST',
       body: formData,
     });
 
     if (!response.ok) {
-      throw new Error(`Erro na resposta do servidor: ${response.status} ${response.statusText}`);
+      throw new Error(`Error in server response: ${response.status} ${response.statusText}`);
     }
 
-    console.log('Resposta recebida, processando texto completo');
+    console.log('Response received, processing complete text');
 
-    // Obtém o texto completo da resposta
+    // Get the full text of the response
     const text = await response.text();
-    console.log('Resposta completa recebida, tamanho:', text.length);
-    console.log('Amostra da resposta:', text.substring(0, 200));
+    console.log('Full response received, size:', text.length);
+    console.log('Sample of the response:', text.substring(0, 200));
 
-    // Processar o texto SSE recebido para extrair os dados
+    // Process the received SSE text to extract the data
     const lines = text.split('\n');
     let result = '';
 
-    console.log(`Processando ${lines.length} linhas de resposta`);
+    console.log(`Processing ${lines.length} response lines`);
 
-    // Processar linha por linha para extrair os dados do formato SSE
+    // Process line by line to extract the data from the SSE format
     for (const line of lines) {
       if (line.startsWith('data: ')) {
-        const data = line.substring(6); // Remover 'data: '
+        const data = line.substring(6); // Remove 'data: '
 
         if (data === '[DONE]') {
           continue;
@@ -311,31 +309,31 @@ const uiAnalysisButton: React.FC<UIAnalysisButtonProps> = ({
         try {
           result += data;
 
-          // Verifica se o resultado contém as tags esperadas antes de atualizar
+          // Check if the result contains the expected tags before updating
           const containsStructure =
             result.includes('<summary_title>') &&
             result.includes('<image_analysis>') &&
             result.includes('<development_planning>') &&
             result.includes('<implementation_requirements>');
 
-          // Atualiza o texto no input incrementalmente
+          // Update the text in the input incrementally
           if (containsStructure) {
             onAnalysisComplete(result);
           } else if (result.trim() !== '') {
-            // Se ainda não temos a estrutura completa, continuamos mostrando a mensagem de processamento
-            onAnalysisComplete('Gerando análise da interface UI/UX...\n\n' + result);
+            // If we still don't have the complete structure, we continue showing the processing message
+            onAnalysisComplete('Generating UI/UX interface analysis...\n\n' + result);
           }
         } catch (e) {
-          console.error('Erro processando linha:', e);
+          console.error('Error processing line:', e);
         }
       }
     }
 
-    // Se ainda não temos resultados, verificar se o texto bruto contém o formato esperado
+    // If we don't have results yet, check if the raw text contains the expected format
     if (!result || result.trim() === '') {
-      console.log('Tentando extrair texto da resposta bruta...');
+      console.log('Trying to extract text from raw response...');
 
-      // Se o texto contém o formato esperado, use-o diretamente
+      // If the text contains the expected format, use it directly
       if (
         text.includes('<summary_title>') ||
         text.includes('<image_analysis>') ||
@@ -345,19 +343,19 @@ const uiAnalysisButton: React.FC<UIAnalysisButtonProps> = ({
         result = text;
         onAnalysisComplete(result);
       } else {
-        throw new Error('Nenhum texto foi gerado pela análise');
+        throw new Error('No text was generated by the analysis');
       }
     }
 
-    // Finalização
-    console.log('Análise concluída com sucesso, tamanho do resultado:', result.length);
+    // Completion
+    console.log('Analysis successfully completed, result size:', result.length);
 
     toast.update(toastId, {
       render: (
         <div>
-          <div className="font-bold">Análise concluída!</div>
+          <div className="font-bold">Analysis completed!</div>
           <div className="text-xs text-gray-200 bg-gray-800 p-2 mt-1 rounded">
-            Prompt estruturado gerado com sucesso.
+            Prompt structured generated successfully.
           </div>
         </div>
       ),
@@ -386,12 +384,12 @@ const uiAnalysisButton: React.FC<UIAnalysisButtonProps> = ({
       </Tooltip.Trigger>
       <Tooltip.Portal>
         <Tooltip.Content
-          className="bg-bolt-elements-background-depth-3 text-bolt-elements-textPrimary p-2 rounded-md text-xs border border-bolt-elements-borderColor max-w-xs"
+          className="bg-bolt-elements-background-depth-3 text-bolt-elements-textPrimary p-2 rounded-md text-xs border border-bolt-elements-borderColor max-w-[200px] z-50"
           sideOffset={5}
         >
-          <p className="font-semibold">Analisar UI/UX</p>
+          <p className="font-semibold">Analyze UI/UX</p>
           <div className="text-bolt-elements-textSecondary mt-1">
-            Gera um prompt estruturado baseado na imagem de interface
+            Generates a structured prompt based on the interface image
           </div>
           <Tooltip.Arrow className="fill-bolt-elements-background-depth-3" />
         </Tooltip.Content>

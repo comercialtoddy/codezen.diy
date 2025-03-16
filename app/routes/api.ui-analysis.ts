@@ -38,19 +38,16 @@ async function streamToText(stream: ReadableStream, transformer?: (text: string)
         break;
       }
 
-      // Verificar se o valor é uma instância válida de Uint8Array ou similar
+      // Check if the value is a valid instance of Uint8Array or similar
       if (value && (value instanceof Uint8Array || value.buffer instanceof ArrayBuffer)) {
         result += decoder.decode(value, { stream: true });
       } else if (value) {
-        // Log para depuração do tipo de valor recebido
-        logger.warn(`Valor inesperado recebido no stream: ${typeof value}, skipping decode`);
-
-        // Tentar converter para string caso seja outro tipo
+        // Try to convert to string if it's another type
         try {
           result += String(value);
         } catch (e) {
-          // Ignorar se não puder converter
-          logger.error('Não foi possível converter valor para string:', e);
+          // Ignore if unable to convert
+          logger.error('Could not convert value to string:', e);
         }
       }
     }
@@ -386,9 +383,9 @@ async function uiAnalysisAction({ context, request }: ActionFunctionArgs) {
     // If we have an ID, save the stream in cache for later retrieval via EventSource
     if (id) {
       try {
-        // Verificar se o stream é válido antes de clonar
+        // Check if the stream is valid before cloning
         if (!result.textStream || typeof result.textStream.tee !== 'function') {
-          throw new Error('Stream inválido: não é possível clonar o stream');
+          throw new Error('Invalid stream: unable to clone the stream');
         }
 
         // Clone the stream to preserve the original
@@ -403,9 +400,9 @@ async function uiAnalysisAction({ context, request }: ActionFunctionArgs) {
         // Process the stream in the background and update the cache
         (async () => {
           try {
-            // Verificar se o stream clonado é válido
+            // Check if the cloned stream is valid
             if (!clonedStream[0] || typeof clonedStream[0].getReader !== 'function') {
-              throw new Error('Stream clonado inválido');
+              throw new Error('Invalid cloned stream');
             }
 
             // Convert the first stream to text
