@@ -1,12 +1,87 @@
 import JSZip from 'jszip';
-import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist';
-import type { PDFDocumentProxy } from 'pdfjs-dist';
+/*
+ * Usar importações dinâmicas para PDF.js em vez de importações estáticas
+ * import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist';
+ * import type { PDFDocumentProxy } from 'pdfjs-dist';
+ */
+
+// Tipos para PDF.js
+interface PDFDocumentProxy {
+  numPages: number;
+  getPage: (pageNumber: number) => Promise<any>;
+  cleanup: () => void;
+}
+
+// Referências temporárias que serão inicializadas durante a execução
+let getDocument: any;
+let globalWorkerOptions: any;
+
+// URL CDN para o worker do PDF.js
+const pdfJsCdnWorkerUrl = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@latest/build/pdf.worker.min.js';
+
+// Importamos PDF.js sob demanda
+let pdfJsLoaded = false;
+
+async function loadPdfJsIfNeeded() {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+
+  if (!pdfJsLoaded) {
+    try {
+      // Verificar se já temos uma importação definida
+      if (window.hasOwnProperty('pdfjsLib') && window.pdfjsLib) {
+        // Agora o TypeScript sabe que pdfjsLib não é undefined
+        const pdfjsLib = window.pdfjsLib;
+        getDocument = pdfjsLib.getDocument;
+        globalWorkerOptions = pdfjsLib.globalWorkerOptions;
+        globalWorkerOptions.workerSrc = pdfJsCdnWorkerUrl;
+        pdfJsLoaded = true;
+
+        return true;
+      }
+
+      // Carregar o script PDF.js
+      const script = document.createElement('script');
+      script.src = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@latest/build/pdf.min.js';
+
+      // Esperar o script carregar
+      await new Promise<void>((resolve, reject) => {
+        script.onload = () => resolve();
+        script.onerror = (e) => reject(new Error(`Erro ao carregar PDF.js: ${e}`));
+        document.head.appendChild(script);
+      });
+
+      // Verificar se foi carregado corretamente
+      if (window.pdfjsLib) {
+        const pdfjsLib = window.pdfjsLib;
+        getDocument = pdfjsLib.getDocument;
+        globalWorkerOptions = pdfjsLib.globalWorkerOptions;
+        globalWorkerOptions.workerSrc = pdfJsCdnWorkerUrl;
+
+        pdfJsLoaded = true;
+
+        return true;
+      }
+
+      throw new Error('PDF.js não foi carregado corretamente');
+    } catch (error) {
+      console.error('Erro ao carregar PDF.js:', error);
+      return false;
+    }
+  }
+
+  return pdfJsLoaded;
+}
 
 /*
  * Import the worker as a virtual URL from Vite
  * @vite-ignore
  */
-const pdfjsWorkerUrl = new URL('pdfjs-dist/build/pdf.worker.mjs', import.meta.url).href;
+/*
+ * Remover a URL do worker antiga
+ * const pdfjsWorkerUrl = new URL('pdfjs-dist/build/pdf.worker.mjs', import.meta.url).href;
+ */
 
 /*
  * Flag to use only fallback method
@@ -207,11 +282,6 @@ async function extractPdfTextSimple(file: File | Blob): Promise<string> {
   }
 }
 
-// Configure o worker (compatível com Vite)
-if (typeof window !== 'undefined') {
-  GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl;
-}
-
 // Cache for PDF documents to improve performance
 const pdfCache = new Map<string, Promise<PDFDocumentProxy>>();
 
@@ -224,6 +294,14 @@ const pdfCache = new Map<string, Promise<PDFDocumentProxy>>();
 export async function extractTextFromPDF(file: File | Blob): Promise<string> {
   try {
     console.log('Extracting text from PDF using pdfjs-dist');
+
+    // Carregar PDF.js primeiro
+    const isPdfJsLoaded = await loadPdfJsIfNeeded();
+
+    if (!isPdfJsLoaded) {
+      console.log('Falling back to simplified PDF extraction method');
+      return extractPdfTextSimple(file);
+    }
 
     // Generate a unique key for the file cache
     const cacheKey = file instanceof File ? file.name + file.lastModified : Math.random().toString();

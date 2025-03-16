@@ -4,7 +4,53 @@ import type { ProviderInfo } from '~/types/model';
 
 // PDF.js será importado dinamicamente apenas no cliente
 let getDocument: any;
-let GlobalWorkerOptions: any;
+let globalWorkerOptions: any;
+
+// Implementação da importação do PDF.js via script
+const loadPdfJs = async (): Promise<boolean> => {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+
+  try {
+    // Verificar se já temos uma importação definida
+    if (window.hasOwnProperty('pdfjsLib') && window.pdfjsLib) {
+      // Agora o TypeScript sabe que pdfjsLib não é undefined
+      const pdfjsLib = window.pdfjsLib;
+      getDocument = pdfjsLib.getDocument;
+      globalWorkerOptions = pdfjsLib.globalWorkerOptions;
+      globalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@latest/build/pdf.worker.min.js';
+
+      return true;
+    }
+
+    // Carregar o script PDF.js
+    const script = document.createElement('script');
+    script.src = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@latest/build/pdf.min.js';
+
+    // Esperar o script carregar
+    await new Promise<void>((resolve, reject) => {
+      script.onload = () => resolve();
+      script.onerror = (e) => reject(new Error(`Erro ao carregar PDF.js: ${e}`));
+      document.head.appendChild(script);
+    });
+
+    // Verificar se foi carregado corretamente
+    if (window.pdfjsLib) {
+      const pdfjsLib = window.pdfjsLib;
+      getDocument = pdfjsLib.getDocument;
+      globalWorkerOptions = pdfjsLib.globalWorkerOptions;
+      globalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@latest/build/pdf.worker.min.js';
+
+      return true;
+    }
+
+    throw new Error('PDF.js não foi carregado corretamente');
+  } catch (error) {
+    console.error('Erro ao carregar PDF.js:', error);
+    return false;
+  }
+};
 
 interface FilePreviewProps {
   files: File[];
@@ -40,18 +86,9 @@ const FilePreview: React.FC<FilePreviewProps> = ({
   // Verificar se PDF.js foi carregado
   useEffect(() => {
     if (isClientSide) {
-      import('pdfjs-dist')
-        .then((pdfjs) => {
-          getDocument = pdfjs.getDocument;
-          GlobalWorkerOptions = pdfjs.GlobalWorkerOptions;
-
-          // Configure o worker após a importação
-          if (!GlobalWorkerOptions.workerSrc) {
-            const pdfjsWorkerUrl = new URL('pdfjs-dist/build/pdf.worker.mjs', import.meta.url).href;
-            GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl;
-          }
-
-          setIsPdfJsLoaded(true);
+      loadPdfJs()
+        .then((success) => {
+          setIsPdfJsLoaded(success);
         })
         .catch((err) => {
           console.error('Error loading PDF.js:', err);
