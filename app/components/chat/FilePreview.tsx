@@ -1,15 +1,28 @@
 import React, { useEffect, useState } from 'react';
-import { getDocument } from 'pdfjs-dist';
-import { GlobalWorkerOptions } from 'pdfjs-dist';
 import UIAnalysisButton from './UIAnalysisButton';
 import type { ProviderInfo } from '~/types/model';
 
-// Import the worker as a virtual URL from Vite (if not configured elsewhere)
-const pdfjsWorkerUrl = new URL('pdfjs-dist/build/pdf.worker.mjs', import.meta.url).href;
+// Variáveis para carregar PDF.js somente no cliente
+let pdfjs: any = null;
 
-// Configure the worker if not already configured
-if (typeof window !== 'undefined' && !GlobalWorkerOptions.workerSrc) {
-  GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl;
+// Carrega o worker e PDF.js apenas no cliente
+if (typeof window !== 'undefined') {
+  // Importação dinâmica apenas no cliente
+  import('pdfjs-dist')
+    .then((module) => {
+      pdfjs = module;
+
+      // Import the worker as a virtual URL from Vite (if not configured elsewhere)
+      const pdfjsWorkerUrl = new URL('pdfjs-dist/build/pdf.worker.mjs', import.meta.url).href;
+
+      // Configure the worker if not already configured
+      if (!pdfjs.GlobalWorkerOptions.workerSrc) {
+        pdfjs.GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl;
+      }
+    })
+    .catch((err) => {
+      console.error('Erro ao carregar pdfjs-dist:', err);
+    });
 }
 
 interface FilePreviewProps {
@@ -37,6 +50,11 @@ const FilePreview: React.FC<FilePreviewProps> = ({
   const [pdfThumbnails, setPdfThumbnails] = useState<Record<string, PDFThumbnailData>>({});
 
   useEffect(() => {
+    // Se estamos no servidor ou o PDF.js não foi carregado, ignorar processamento
+    if (typeof window === 'undefined' || !pdfjs) {
+      return;
+    }
+
     // Process PDF thumbnails
     const processPdfThumbnails = async () => {
       for (const file of files) {
@@ -48,7 +66,7 @@ const FilePreview: React.FC<FilePreviewProps> = ({
           try {
             // Load the PDF and generate thumbnail of the first page
             const arrayBuffer = await file.arrayBuffer();
-            const loadingTask = getDocument({ data: arrayBuffer });
+            const loadingTask = pdfjs.getDocument({ data: arrayBuffer });
             const pdf = await loadingTask.promise;
             const pageCount = pdf.numPages;
 
