@@ -1,12 +1,33 @@
 import JSZip from 'jszip';
-import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist';
-import type { PDFDocumentProxy } from 'pdfjs-dist';
+
 
 /*
- * Import the worker as a virtual URL from Vite
- * @vite-ignore
+ Import pdfjs-dist conditionally
+  * Using type imports to ensure types are always available
  */
-const pdfjsWorkerUrl = new URL('pdfjs-dist/build/pdf.worker.mjs', import.meta.url).href;
+ import type { PDFDocumentProxy } from 'pdfjs-dist';
+ 
+ // Dynamic imports and variables that will be initialized in browser environment
+ let pdfjsLib: typeof import('pdfjs-dist') | null = null;
+ let pdfjsWorkerUrl: string | null = null;
+ 
+ // Conditional initialization for browser only
+ if (typeof window !== 'undefined') {
+   // This import() is async but we're handling it in each function that needs it
+   import('pdfjs-dist')
+     .then((module) => {
+       pdfjsLib = module;
+       // Set up worker URL
+       pdfjsWorkerUrl = new URL('pdfjs-dist/build/pdf.worker.mjs', import.meta.url).href;
+ 
+       if (pdfjsLib) {
+         pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl;
+       }
+     })
+     .catch((err) => {
+       console.error('Error loading pdfjs-dist:', err);
+     });
+ }
 
 /*
  * Flag to use only fallback method
@@ -207,23 +228,27 @@ async function extractPdfTextSimple(file: File | Blob): Promise<string> {
   }
 }
 
-// Configure o worker (compatível com Vite)
-if (typeof window !== 'undefined') {
-  GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl;
-}
-
 // Cache for PDF documents to improve performance
 const pdfCache = new Map<string, Promise<PDFDocumentProxy>>();
 
 /**
  * Extracts text from a PDF file using pdfjs-dist with optimizations
+ * Falls back to simple extraction method if in server environment or if pdfjs fails
  *
  * @param file The PDF file
  * @returns A Promise with the extracted text
  */
 export async function extractTextFromPDF(file: File | Blob): Promise<string> {
   try {
-    console.log('Extracting text from PDF using pdfjs-dist');
+    console.log('Extracting text from PDF');
+ 
+     // If we're in a server environment or pdfjs hasn't loaded, use simple method
+     if (typeof window === 'undefined' || !pdfjsLib) {
+       console.log('Using fallback PDF extraction method (server environment or pdfjs not loaded)');
+       return extractPdfTextSimple(file);
+     }
+ 
+     console.log('Using pdfjs-dist for PDF extraction');
 
     // Generate a unique key for the file cache
     const cacheKey = file instanceof File ? file.name + file.lastModified : Math.random().toString();
@@ -237,7 +262,7 @@ export async function extractTextFromPDF(file: File | Blob): Promise<string> {
     if (pdfCache.has(cacheKey)) {
       pdfDocument = await pdfCache.get(cacheKey)!;
     } else {
-      const loadingTask = getDocument({
+      const loadingTask = pdfjsLib.getDocument({
         data: arrayBuffer,
         disableFontFace: true, // Reduces memory usage
         /*

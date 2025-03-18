@@ -15,6 +15,31 @@ export async function loader(args: LoaderFunctionArgs) {
 
 const logger = createScopedLogger('api.ui-analysis');
 
+// Function to convert text stream to byte stream for Cloudflare Workers
+function returnStream(stream: ReadableStream): Response {
+  const encoder = new TextEncoder();
+
+  const transformStream = new TransformStream({
+    transform(chunk, controller) {
+      const bytes = encoder.encode(chunk);
+      controller.enqueue(bytes);
+    },
+  });
+
+  // Connect streams
+  stream.pipeTo(transformStream.writable);
+
+  return new Response(transformStream.readable, {
+    status: 200,
+    headers: {
+      'Content-Type': 'text/event-stream',
+      Connection: 'keep-alive',
+      'Cache-Control': 'no-cache',
+      'X-Content-Type-Options': 'nosniff',
+    },
+  });
+}
+
 /*
  * Temporary storage to avoid reprocessing images
  * In practice, this would be better implemented with a Redis cache or similar
@@ -451,15 +476,7 @@ async function uiAnalysisAction({ context, request }: ActionFunctionArgs) {
     // Without an ID, return the result directly as SSE
     try {
       // Return the stream as SSE
-      return new Response(result.textStream, {
-        status: 200,
-        headers: {
-          'Content-Type': 'text/event-stream',
-          Connection: 'keep-alive',
-          'Cache-Control': 'no-cache',
-          'X-Content-Type-Options': 'nosniff',
-        },
-      });
+      return returnStream(result.textStream);
     } catch (error) {
       logger.error('Error processing stream for response:', error);
 

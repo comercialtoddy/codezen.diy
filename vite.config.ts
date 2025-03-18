@@ -95,7 +95,7 @@ export default defineConfig((config) => {
     build: {
       target: 'esnext',
       rollupOptions: {
-        external: ['pdfjs-dist'],
+        external: [],
         output: {
           format: 'esm',
         },
