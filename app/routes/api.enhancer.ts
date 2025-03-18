@@ -11,6 +11,30 @@ export async function action(args: ActionFunctionArgs) {
 
 const logger = createScopedLogger('api.enhancher');
 
+// Function to convert text stream to byte stream for Cloudflare Workers
+function returnStream(stream: ReadableStream): Response {
+  const encoder = new TextEncoder();
+
+  const transformStream = new TransformStream({
+    transform(chunk, controller) {
+      const bytes = encoder.encode(chunk);
+      controller.enqueue(bytes);
+    },
+  });
+
+  // Connect streams
+  stream.pipeTo(transformStream.writable);
+
+  return new Response(transformStream.readable, {
+    status: 200,
+    headers: {
+      'Content-Type': 'text/event-stream',
+      Connection: 'keep-alive',
+      'Cache-Control': 'no-cache',
+    },
+  });
+}
+
 async function enhancerAction({ context, request }: ActionFunctionArgs) {
   const { message, model, provider } = await request.json<{
     message: string;
@@ -110,15 +134,8 @@ async function enhancerAction({ context, request }: ActionFunctionArgs) {
       }
     })();
 
-    // Return the text stream directly since it's already text data
-    return new Response(result.textStream, {
-      status: 200,
-      headers: {
-        'Content-Type': 'text/event-stream',
-        Connection: 'keep-alive',
-        'Cache-Control': 'no-cache',
-      },
-    });
+    // Return a properly encoded byte stream for Cloudflare Workers
+    return returnStream(result.textStream);
   } catch (error: unknown) {
     console.log(error);
 
