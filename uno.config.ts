@@ -92,6 +92,7 @@ const COLOR_PRIMITIVES = {
   alpha: {
     white: generateAlphaPalette(BASE_COLORS.white),
     gray: generateAlphaPalette(BASE_COLORS.gray[900]),
+    green: generateAlphaPalette(BASE_COLORS.green[500]),
     red: generateAlphaPalette(BASE_COLORS.red[500]),
     accent: generateAlphaPalette(BASE_COLORS.accent[500]),
   },
