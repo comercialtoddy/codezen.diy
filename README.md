@@ -1,8 +1,8 @@
-# bolt.diy
+# bolt.diy (Previously oTToDev)
 
 [![bolt.diy: AI-Powered Full-Stack Web Development in the Browser](./public/social_preview_index.jpg)](https://bolt.diy)
 
-Welcome to bolt.diy, the official open source version of Bolt.new, which allows you to choose the LLM that you use for each prompt! Currently, you can use OpenAI, Anthropic, Ollama, OpenRouter, Gemini, LMStudio, Mistral, xAI, HuggingFace, DeepSeek, or Groq models - and it is easily extended to use any other model supported by the Vercel AI SDK! See the instructions below for running this locally and extending it to include more models.
+Welcome to bolt.diy, the official open source version of Bolt.new (previously known as oTToDev and bolt.new ANY LLM), which allows you to choose the LLM that you use for each prompt! Currently, you can use OpenAI, Anthropic, Ollama, OpenRouter, Gemini, LMStudio, Mistral, xAI, HuggingFace, DeepSeek, or Groq models - and it is easily extended to use any other model supported by the Vercel AI SDK! See the instructions below for running this locally and extending it to include more models.
 
 -----
 Check the [bolt.diy Docs](https://stackblitz-labs.github.io/bolt.diy/) for more offical installation instructions and more informations.
@@ -82,13 +82,10 @@ project, please check the [project management guide](./PROJECT.md) to get starte
 - ✅ Add "Diff View" to see the changes (@toddyclipsgg)
 - ✅ Add files MD, DOCX, TXT and PDF (@toddyclipsgg)
 - ✅ Add "Clone UX/UI" (@toddyclipsgg)
-- ✅ Popout Window for Web Container(@stijnus)
-- ✅ Ability to change Popout window size (@stijnus)
-- ✅ Deploy directly to Netlify (@xKevIsDev)
-- ✅ Supabase Integration (@xKevIsDev)
 - ⬜ **HIGH PRIORITY** - Prevent bolt from rewriting files as often (file locking and diffs)
 - ⬜ **HIGH PRIORITY** - Better prompting for smaller LLMs (code window sometimes doesn't start)
 - ⬜ **HIGH PRIORITY** - Run agents in the backend as opposed to a single model call
+- ⬜ Deploy directly to Vercel/Netlify/other similar platforms
 - ⬜ Have LLM plan the project in a MD file for better results/transparency
 - ⬜ VSCode Integration with git-like confirmations
 - ⬜ Upload documents for knowledge - UI design templates, a code base to reference coding style, etc.
@@ -96,6 +93,8 @@ project, please check the [project management guide](./PROJECT.md) to get starte
 - ⬜ Azure Open AI API Integration
 - ⬜ Vertex AI Integration
 - ⬜ Granite Integration
+- ✅ Popout Window for Web Container(@stijnus)
+- ✅ Ability to change Popout window size (@stijnus)
 
 ## Features
 
@@ -104,9 +103,8 @@ project, please check the [project management guide](./PROJECT.md) to get starte
 - **Attach images to prompts** for better contextual understanding.
 - **Integrated terminal** to view output of LLM-run commands.
 - **Revert code to earlier versions** for easier debugging and quicker changes.
-- **Download projects as ZIP** for easy portability Sync to a folder on the host.
+- **Download projects as ZIP** for easy portability.
 - **Integration-ready Docker support** for a hassle-free setup.
-- **Deploy** directly to **Netlify**
 
 ## Setup
 
@@ -245,7 +243,8 @@ This method is recommended for developers who want to:
 1. **Clone the Repository**:
 
    ```bash
-   git clone -b stable https://github.com/stackblitz-labs/bolt.diy.git
+   # Using HTTPS
+   git clone https://github.com/stackblitz-labs/bolt.diy.git
    ```
 
 2. **Navigate to Project Directory**:
@@ -254,30 +253,20 @@ This method is recommended for developers who want to:
    cd bolt.diy
    ```
 
-3. **Install Dependencies**:
-
-   ```bash
-   pnpm install
-   ```
-
-4. **Start the Development Server**:
-   ```bash
-   pnpm run dev
-   ```
-
-5. **(OPTIONAL)** Switch to the Main Branch if you want to use pre-release/testbranch:
+3. **Switch to the Main Branch**:
    ```bash
    git checkout main
+   ```
+4. **Install Dependencies**:
+
+   ```bash
    pnpm install
+   ```
+
+5. **Start the Development Server**:
+   ```bash
    pnpm run dev
    ```
-  Hint: Be aware that this can have beta-features and more likely got bugs than the stable release
-
->**Open the WebUI to test (Default: http://localhost:5173)**
->   - Beginngers: 
->     - Try to use a sophisticated Provider/Model like Anthropic with Claude Sonnet 3.x Models to get best results
->     - Explanation: The System Prompt currently implemented in bolt.diy cant cover the best performance for all providers and models out there. So it works better with some models, then other, even if the models itself are perfect for >programming
->     - Future: Planned is a Plugin/Extentions-Library so there can be different System Prompts for different Models, which will help to get better results
 
 #### Staying Updated
 
@@ -292,7 +281,7 @@ To get the latest changes from the repository:
 2. **Pull Latest Updates**:
 
    ```bash
-   git pull 
+   git pull origin main
    ```
 
 3. **Update Dependencies**:
@@ -362,9 +351,3 @@ Explore upcoming features and priorities on our [Roadmap](https://roadmap.sh/r/o
 ## FAQ
 
 For answers to common questions, issues, and to see a list of recommended models, visit our [FAQ Page](FAQ.md).
-
-
-# Licensing
-**Who needs a commercial WebContainer API license?**
-
-bolt.diy source code is distributed as MIT, but it uses WebContainers API that [requires licensing](https://webcontainers.io/enterprise) for production usage in a commercial, for-profit setting. (Prototypes or POCs do not require a commercial license.) If you're using the API to meet the needs of your customers, prospective customers, and/or employees, you need a license to ensure compliance with our Terms of Service. Usage of the API in violation of these terms may result in your access being revoked.

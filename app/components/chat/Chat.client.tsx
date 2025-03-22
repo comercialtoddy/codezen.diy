@@ -26,7 +26,6 @@ import { getTemplates, selectStarterTemplate } from '~/utils/selectStarterTempla
 import { logStore } from '~/lib/stores/logs';
 import { streamingState } from '~/lib/stores/streaming';
 import { filesToArtifacts } from '~/utils/fileUtils';
-import { supabaseConnection } from '~/lib/stores/supabase';
 import { extractTextFromDocument } from '~/utils/documentUtils';
 
 const toastAnimation = cssTransition({
@@ -125,11 +124,6 @@ export const ChatImpl = memo(
     const [fakeLoading, setFakeLoading] = useState(false);
     const files = useStore(workbenchStore.files);
     const actionAlert = useStore(workbenchStore.alert);
-    const supabaseConn = useStore(supabaseConnection); // Add this line to get Supabase connection
-    const selectedProject = supabaseConn.stats?.projects?.find(
-      (project) => project.id === supabaseConn.selectedProjectId,
-    );
-    const supabaseAlert = useStore(workbenchStore.supabaseAlert);
     const { activeProviders, promptId, autoSelectTemplate, contextOptimizationEnabled } = useSettings();
 
     const [model, setModel] = useState(() => {
@@ -167,14 +161,6 @@ export const ChatImpl = memo(
         files,
         promptId,
         contextOptimization: contextOptimizationEnabled,
-        supabase: {
-          isConnected: supabaseConn.isConnected,
-          hasSelectedProject: !!selectedProject,
-          credentials: {
-            supabaseUrl: supabaseConn?.credentials?.supabaseUrl,
-            anonKey: supabaseConn?.credentials?.anonKey,
-          },
-        },
       },
       sendExtraMessageFields: true,
       onError: (e) => {
@@ -691,8 +677,6 @@ export const ChatImpl = memo(
         setImageDataList={setImageDataList}
         actionAlert={actionAlert}
         clearAlert={() => workbenchStore.clearAlert()}
-        supabaseAlert={supabaseAlert}
-        clearSupabaseAlert={() => workbenchStore.clearSupabaseAlert()}
         data={chatData}
       />
     );
