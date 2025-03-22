@@ -82,11 +82,13 @@ project, please check the [project management guide](./PROJECT.md) to get starte
 - ✅ Add "Diff View" to see the changes (@toddyclipsgg)
 - ✅ Add files MD, DOCX, TXT and PDF (@toddyclipsgg)
 - ✅ Add "Clone UX/UI" (@toddyclipsgg)
+- ✅ Popout Window for Web Container(@stijnus)
+- ✅ Ability to change Popout window size (@stijnus)
+- ✅ Deploy directly to Netlify (@xKevIsDev)
+- ✅ Supabase Integration (@xKevIsDev)
 - ⬜ **HIGH PRIORITY** - Prevent bolt from rewriting files as often (file locking and diffs)
 - ⬜ **HIGH PRIORITY** - Better prompting for smaller LLMs (code window sometimes doesn't start)
 - ⬜ **HIGH PRIORITY** - Run agents in the backend as opposed to a single model call
-- ✅ Deploy directly to Netlify (@xKevIsDev)
-- ⬜ Supabase Integration
 - ⬜ Have LLM plan the project in a MD file for better results/transparency
 - ⬜ VSCode Integration with git-like confirmations
 - ⬜ Upload documents for knowledge - UI design templates, a code base to reference coding style, etc.
@@ -94,8 +96,6 @@ project, please check the [project management guide](./PROJECT.md) to get starte
 - ⬜ Azure Open AI API Integration
 - ⬜ Vertex AI Integration
 - ⬜ Granite Integration
-- ✅ Popout Window for Web Container(@stijnus)
-- ✅ Ability to change Popout window size (@stijnus)
 
 ## Features
 
