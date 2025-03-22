@@ -1,5 +1,5 @@
 import type { Message } from 'ai';
-import { Fragment } from 'react';
+import { Fragment, useEffect } from 'react';
 import { classNames } from '~/utils/classNames';
 import { AssistantMessage } from './AssistantMessage';
 import { UserMessage } from './UserMessage';
@@ -12,6 +12,7 @@ import { useStore } from '@nanostores/react';
 import { profileStore } from '~/lib/stores/profile';
 import { forwardRef } from 'react';
 import type { ForwardedRef } from 'react';
+import { announcementVisibilityStore } from '~/lib/stores/announcement';
 
 interface MessagesProps {
   id?: string;
@@ -25,6 +26,18 @@ export const Messages = forwardRef<HTMLDivElement, MessagesProps>(
     const { id, isStreaming = false, messages = [] } = props;
     const location = useLocation();
     const profile = useStore(profileStore);
+
+    useEffect(() => {
+      if (messages.length > 0) {
+        announcementVisibilityStore.hideAnnouncement();
+      }
+
+      return () => {
+        if (messages.length === 0) {
+          announcementVisibilityStore.showAnnouncementAgain();
+        }
+      };
+    }, [messages.length]);
 
     const handleRewind = (messageId: string) => {
       const searchParams = new URLSearchParams(location.search);

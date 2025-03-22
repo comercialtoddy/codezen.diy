@@ -1,9 +1,10 @@
-import { memo } from 'react';
+import { memo, useEffect } from 'react';
 import { Markdown } from './Markdown';
 import type { JSONValue } from 'ai';
 import Popover from '~/components/ui/Popover';
 import { workbenchStore } from '~/lib/stores/workbench';
 import { WORK_DIR } from '~/utils/constants';
+import { announcementVisibilityStore } from '~/lib/stores/announcement';
 
 interface AssistantMessageProps {
   content: string;
@@ -35,6 +36,16 @@ function normalizedFilePath(path: string) {
 }
 
 export const AssistantMessage = memo(({ content, annotations }: AssistantMessageProps) => {
+  // Esconder anúncio quando a mensagem do assistente for exibida
+  useEffect(() => {
+    announcementVisibilityStore.hideAnnouncement();
+
+    // Opcional: restaurar o anúncio quando o componente for desmontado
+    return () => {
+      // Decidir se deve restaurar o anúncio será feito no componente Messages
+    };
+  }, []);
+
   const filteredAnnotations = (annotations?.filter(
     (annotation: JSONValue) => annotation && typeof annotation === 'object' && Object.keys(annotation).includes('type'),
   ) || []) as { type: string; value: any } & { [key: string]: any }[];
